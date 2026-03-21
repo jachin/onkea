@@ -70,21 +70,6 @@ public struct HugoConfig: Decodable, Equatable {
             }
         }
     }
-
-    public mutating func merge(with other: HugoConfig) {
-        if let v = other.title { self.title = v }
-        if let v = other.baseURL { self.baseURL = v }
-        if let v = other.languageCode { self.languageCode = v }
-        if let v = other.theme { self.theme = v }
-        if let v = other.params { self.params = v }
-        if let v = other.menus { self.menus = v }
-        if let v = other.outputs { self.outputs = v }
-        if let v = other.taxonomies { self.taxonomies = v }
-        if let v = other.languages { self.languages = v }
-        if let v = other.permalinks { self.permalinks = v }
-        if let v = other.markup { self.markup = v }
-        for (k, v) in other.additional { self.additional[k] = v }
-    }
 }
 
 struct AnyCodingKey: CodingKey {
@@ -155,6 +140,7 @@ public struct AnyCodable: Codable, Equatable, Hashable {
         }
     }
 }
+
 extension AnyCodable {
     public static func == (lhs: AnyCodable, rhs: AnyCodable) -> Bool {
         switch (lhs.value, rhs.value) {
@@ -179,18 +165,5 @@ extension AnyCodable {
         default: hasher.combine(0)
         }
     }
-}
-
-public func loadMergedHugoConfig(from directory: URL) throws -> HugoConfig {
-    let fm = FileManager.default
-    let configs = try fm.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil).filter { $0.pathExtension.lowercased() == "toml" }
-    var result = HugoConfig()
-    let decoder = TOMLDecoder()
-    for file in configs.sorted(by: { $0.lastPathComponent < $1.lastPathComponent }) {
-        let content = try String(contentsOf: file, encoding: .utf8)
-        let partial = try decoder.decode(HugoConfig.self, from: content)
-        result.merge(with: partial)
-    }
-    return result
 }
 
