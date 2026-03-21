@@ -6,6 +6,11 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		185672292F6E3AE30097ED76 /* TOMLKit in Frameworks */ = {isa = PBXBuildFile; productRef = 185672282F6E3AE30097ED76 /* TOMLKit */; };
+		185672332F6E45F10097ED76 /* TOMLKit in Frameworks */ = {isa = PBXBuildFile; productRef = 185672322F6E45F10097ED76 /* TOMLKit */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXContainerItemProxy section */
 		185672092F6E34DD0097ED76 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -52,6 +57,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				185672292F6E3AE30097ED76 /* TOMLKit in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -59,6 +65,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				185672332F6E45F10097ED76 /* TOMLKit in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -78,6 +85,7 @@
 				185671FB2F6E34DC0097ED76 /* YouGoHugo */,
 				1856720B2F6E34DD0097ED76 /* YouGoHugoTests */,
 				185672152F6E34DD0097ED76 /* YouGoHugoUITests */,
+				185672312F6E45F10097ED76 /* Frameworks */,
 				185671FA2F6E34DC0097ED76 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -90,6 +98,13 @@
 				185672122F6E34DD0097ED76 /* YouGoHugoUITests.xctest */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		185672312F6E45F10097ED76 /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+			);
+			name = Frameworks;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -112,6 +127,7 @@
 			);
 			name = YouGoHugo;
 			packageProductDependencies = (
+				185672282F6E3AE30097ED76 /* TOMLKit */,
 			);
 			productName = YouGoHugo;
 			productReference = 185671F92F6E34DC0097ED76 /* YouGoHugo.app */;
@@ -135,6 +151,7 @@
 			);
 			name = YouGoHugoTests;
 			packageProductDependencies = (
+				185672322F6E45F10097ED76 /* TOMLKit */,
 			);
 			productName = YouGoHugoTests;
 			productReference = 185672082F6E34DD0097ED76 /* YouGoHugoTests.xctest */;
@@ -195,6 +212,9 @@
 			);
 			mainGroup = 185671F02F6E34DC0097ED76;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				185672272F6E3AE30097ED76 /* XCRemoteSwiftPackageReference "TOMLKit" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 185671FA2F6E34DC0097ED76 /* Products */;
 			projectDirPath = "";
@@ -563,6 +583,30 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		185672272F6E3AE30097ED76 /* XCRemoteSwiftPackageReference "TOMLKit" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/LebJe/TOMLKit";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 0.6.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		185672282F6E3AE30097ED76 /* TOMLKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 185672272F6E3AE30097ED76 /* XCRemoteSwiftPackageReference "TOMLKit" */;
+			productName = TOMLKit;
+		};
+		185672322F6E45F10097ED76 /* TOMLKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 185672272F6E3AE30097ED76 /* XCRemoteSwiftPackageReference "TOMLKit" */;
+			productName = TOMLKit;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 185671F12F6E34DC0097ED76 /* Project object */;
 }
