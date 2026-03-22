@@ -7,6 +7,35 @@ private let fallbackHugoExecutablePaths = [
     "/usr/bin/hugo"
 ]
 
+private let hugoServerArguments = [
+    "server",
+    "--noHTTPCache",
+    "--buildDrafts",
+    "--buildExpired",
+    "--buildFuture"
+]
+
+public enum HugoServerPhase: Equatable {
+    case stopped
+    case starting
+    case building
+    case serving
+    case warning
+    case failed
+}
+
+public struct HugoServerStatus: Equatable {
+    public let phase: HugoServerPhase
+    public let message: String
+    public let serverURL: URL?
+
+    public init(phase: HugoServerPhase, message: String, serverURL: URL? = nil) {
+        self.phase = phase
+        self.message = message
+        self.serverURL = serverURL
+    }
+}
+
 func hugoExecutableURL(
     environment: [String: String] = ProcessInfo.processInfo.environment,
     fileManager: FileManager = .default
@@ -125,4 +154,176 @@ public func checkHugoVersion() async throws -> HugoVersion {
             }
         }
     }
+}
+
+private final class HugoServerOutputParser {
+    private var buffer = ""
+    private var currentServerURL: URL?
+    private let statusHandler: @MainActor (HugoServerStatus) -> Void
+
+    init(statusHandler: @escaping @MainActor (HugoServerStatus) -> Void) {
+        self.statusHandler = statusHandler
+    }
+
+    func ingest(_ data: Data, isError: Bool) {
+        guard !data.isEmpty, let output = String(data: data, encoding: .utf8), !output.isEmpty else {
+            return
+        }
+
+        buffer += output
+        let lines = buffer.components(separatedBy: .newlines)
+        buffer = lines.last ?? ""
+
+        for line in lines.dropLast() {
+            handleLine(line, isError: isError)
+        }
+    }
+
+    func finish() {
+        let trailingLine = buffer.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trailingLine.isEmpty {
+            handleLine(trailingLine, isError: false)
+        }
+        buffer = ""
+    }
+
+    private func handleLine(_ rawLine: String, isError: Bool) {
+        let line = rawLine.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !line.isEmpty else { return }
+
+        if isError {
+            AppLogger.server.error("Hugo server stderr: \(line, privacy: .public)")
+        } else {
+            AppLogger.server.notice("Hugo server stdout: \(line, privacy: .public)")
+        }
+
+        Task { @MainActor in
+            statusHandler(status(for: line, isError: isError))
+        }
+    }
+
+    private func status(for line: String, isError: Bool) -> HugoServerStatus {
+        if let serverURL = extractServerURL(from: line) {
+            currentServerURL = serverURL
+            return HugoServerStatus(
+                phase: .serving,
+                message: "Serving at \(serverURL.absoluteString)",
+                serverURL: serverURL
+            )
+        }
+
+        if line.localizedCaseInsensitiveContains("Start building sites") {
+            return HugoServerStatus(phase: .building, message: "Building site…", serverURL: currentServerURL)
+        }
+
+        if line.localizedCaseInsensitiveContains("Built in") {
+            return HugoServerStatus(phase: .serving, message: line, serverURL: currentServerURL)
+        }
+
+        if line.localizedCaseInsensitiveContains("port") &&
+            line.localizedCaseInsensitiveContains("already in use") {
+            return HugoServerStatus(phase: .warning, message: line, serverURL: currentServerURL)
+        }
+
+        if line.localizedCaseInsensitiveContains("Watching for changes") {
+            return HugoServerStatus(phase: .starting, message: "Watching for changes…", serverURL: currentServerURL)
+        }
+
+        if line.localizedCaseInsensitiveContains("Press Ctrl+C to stop") {
+            return HugoServerStatus(phase: .serving, message: "Server running", serverURL: currentServerURL)
+        }
+
+        if isError || line.localizedCaseInsensitiveContains("error") || line.localizedCaseInsensitiveContains("failed") {
+            return HugoServerStatus(phase: .failed, message: line, serverURL: currentServerURL)
+        }
+
+        return HugoServerStatus(phase: .starting, message: line, serverURL: currentServerURL)
+    }
+
+    private func extractServerURL(from line: String) -> URL? {
+        let marker = "Web Server is available at "
+        guard let range = line.range(of: marker) else {
+            return nil
+        }
+
+        let remainder = line[range.upperBound...]
+        let urlText = remainder.split(separator: " ").first.map(String.init) ?? String(remainder)
+        return URL(string: urlText.trimmingCharacters(in: CharacterSet(charactersIn: ".")))
+    }
+}
+
+public func startHugoServer(
+    from directory: URL,
+    statusHandler: @escaping @MainActor (HugoServerStatus) -> Void
+) throws -> Process {
+    guard let executableURL = hugoExecutableURL() else {
+        throw NSError(
+            domain: "HugoServer",
+            code: 3,
+            userInfo: [NSLocalizedDescriptionKey: "Could not find a Hugo executable."]
+        )
+    }
+
+    let process = Process()
+    process.executableURL = executableURL
+    process.arguments = hugoServerArguments
+    process.currentDirectoryURL = directory
+
+    let outputPipe = Pipe()
+    let errorPipe = Pipe()
+    process.standardOutput = outputPipe
+    process.standardError = errorPipe
+    let parser = HugoServerOutputParser(statusHandler: statusHandler)
+
+    outputPipe.fileHandleForReading.readabilityHandler = { handle in
+        parser.ingest(handle.availableData, isError: false)
+    }
+
+    errorPipe.fileHandleForReading.readabilityHandler = { handle in
+        parser.ingest(handle.availableData, isError: true)
+    }
+
+    process.terminationHandler = { terminatedProcess in
+        outputPipe.fileHandleForReading.readabilityHandler = nil
+        errorPipe.fileHandleForReading.readabilityHandler = nil
+        parser.finish()
+        AppLogger.server.notice("Hugo server exited with status \(terminatedProcess.terminationStatus)")
+        Task { @MainActor in
+            statusHandler(
+                HugoServerStatus(
+                    phase: terminatedProcess.terminationStatus == 0 ? .stopped : .failed,
+                    message: terminatedProcess.terminationStatus == 0 ? "Server stopped" : "Server exited with status \(terminatedProcess.terminationStatus)",
+                    serverURL: nil
+                )
+            )
+        }
+    }
+
+    AppLogger.server.notice(
+        "Starting Hugo server in \(directory.path, privacy: .public) with arguments \(hugoServerArguments.joined(separator: " "), privacy: .public)"
+    )
+
+    do {
+        Task { @MainActor in
+            statusHandler(HugoServerStatus(phase: .starting, message: "Starting Hugo server…", serverURL: nil))
+        }
+        try process.run()
+        return process
+    } catch {
+        outputPipe.fileHandleForReading.readabilityHandler = nil
+        errorPipe.fileHandleForReading.readabilityHandler = nil
+        AppLogger.server.error("Failed to start Hugo server: \(error.localizedDescription, privacy: .public)")
+        Task { @MainActor in
+            statusHandler(HugoServerStatus(phase: .failed, message: "Failed to start Hugo server: \(error.localizedDescription)", serverURL: nil))
+        }
+        throw error
+    }
+}
+
+public func stopHugoServer(_ process: Process?) {
+    guard let process else { return }
+    guard process.isRunning else { return }
+
+    AppLogger.server.notice("Stopping Hugo server")
+    process.terminate()
 }

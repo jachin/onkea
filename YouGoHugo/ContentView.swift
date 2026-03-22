@@ -12,9 +12,12 @@ struct ContentView: View {
     @State private var isLoading = false
     @State private var errorMessage: String? = nil
     @State private var siteURL: URL? = nil
+    @State private var hugoServerProcess: Process? = nil
+    @State private var previewURL: URL? = nil
     @State private var config: HugoConfig? = nil
     @State private var contentItems: [HugoContentItem] = []
     @State private var contentErrorMessage: String? = nil
+    @State private var hugoServerStatus = HugoServerStatus(phase: .stopped, message: "No server running", serverURL: nil)
 
     @State private var hugoStatus: HugoStatus = .checking
 
@@ -38,151 +41,173 @@ struct ContentView: View {
     }
     
     var body: some View {
-        HStack(spacing: 0) {
-            if showSidebar {
-                VStack(alignment: .leading, spacing: 0) {
-                    HStack {
-                        Text("Posts")
-                            .font(.headline)
-                        Spacer()
-                        Button(action: { showSidebar = false }) {
-                            Image(systemName: "sidebar.left")
+        VStack(spacing: 0) {
+            HStack(spacing: 0) {
+                if showSidebar {
+                    VStack(alignment: .leading, spacing: 0) {
+                        HStack {
+                            Text("Posts")
+                                .font(.headline)
+                            Spacer()
+                            Button(action: { showSidebar = false }) {
+                                Image(systemName: "sidebar.left")
+                            }
+                            .buttonStyle(.plain)
+                        }
+                        .padding()
+                        if !siteIsOpen {
+                            VStack(spacing: 16) {
+                                Text("No site open")
+                                    .font(.subheadline)
+                                    .foregroundStyle(.secondary)
+                                Button("Open Site") { openSite() }
+                                Button("Create New Site") { siteIsOpen = true /* TODO: implement creation */ }
+                                if isLoading {
+                                    ProgressView("Loading site...")
+                                        .padding(.top)
+                                }
+                                if let error = errorMessage {
+                                    Text(error)
+                                        .foregroundColor(.red)
+                                        .multilineTextAlignment(.center)
+                                        .padding(.horizontal)
+                                }
+                            }
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        } else {
+                            VStack(alignment: .leading, spacing: 4) {
+                                if let siteTitle = config?.title {
+                                    Text(siteTitle)
+                                        .font(.title3)
+                                        .bold()
+                                        .padding(.horizontal)
+                                }
+                                if let contentErrorMessage {
+                                    Text(contentErrorMessage)
+                                        .font(.footnote)
+                                        .foregroundStyle(.red)
+                                        .padding(.horizontal)
+                                }
+                                List(selection: $selectedPostID) {
+                                    ForEach(contentSections, id: \.section) { section in
+                                        Section(section.section) {
+                                            ForEach(section.items) { item in
+                                                HStack(spacing: 8) {
+                                                    Text(item.displayTitle)
+                                                    if item.isDraft {
+                                                        Text("Draft")
+                                                            .font(.caption2)
+                                                            .foregroundStyle(.secondary)
+                                                    }
+                                                }
+                                                .tag(item.id as String?)
+                                            }
+                                        }
+                                    }
+                                }
+                                .listStyle(.inset)
+                            }
+                        }
+                    }
+                    .frame(minWidth: 180, idealWidth: 220, maxWidth: 260)
+                    .transition(.move(edge: .leading))
+                } else {
+                    VStack {
+                        Button(action: { showSidebar = true }) {
+                            Image(systemName: "sidebar.right")
                         }
                         .buttonStyle(.plain)
+                        Spacer()
                     }
-                    .padding()
-                    if !siteIsOpen {
-                        VStack(spacing: 16) {
-                            Text("No site open")
-                                .font(.subheadline)
-                                .foregroundStyle(.secondary)
-                            Button("Open Site") { openSite() }
-                            Button("Create New Site") { siteIsOpen = true /* TODO: implement creation */ }
-                            if isLoading {
-                                ProgressView("Loading site...")
-                                    .padding(.top)
+                    .frame(width: 20)
+                }
+                Divider()
+                // Main 2-pane editor
+                ZStack {
+                    HStack(spacing: 0) {
+                        VStack(alignment: .leading) {
+                            Text("Markdown Editor")
+                                .font(.caption)
+                                .padding(.top, 8)
+                            TextEditor(text: $markdownText)
+                                .font(.system(.body, design: .monospaced))
+                                .padding([.leading, .trailing, .bottom], 8)
+                        }
+                        .frame(minWidth: 300, idealWidth: 400)
+                        Divider()
+                        VStack(alignment: .leading) {
+                            Text("Preview")
+                                .font(.caption)
+                                .padding(.top, 8)
+                            Group {
+                                if let previewURL {
+                                    WebView(url: previewURL)
+                                } else {
+                                    ContentUnavailableView(
+                                        "Preview Unavailable",
+                                        systemImage: "network.slash",
+                                        description: Text(hugoServerStatus.message)
+                                    )
+                                }
                             }
-                            if let error = errorMessage {
+                            .padding([.leading, .trailing, .bottom], 8)
+                        }
+                    }
+                    .frame(maxWidth: .infinity)
+                    .disabled(!siteIsOpen || hugoStatus != .compatible)
+
+                    if !siteIsOpen {
+                        Rectangle()
+                            .fill(.thinMaterial)
+                            .opacity(0.80)
+                            .ignoresSafeArea()
+
+                        if isLoading {
+                            ProgressView("Loading site...")
+                                .font(.title3)
+                                .foregroundStyle(.secondary)
+                        } else if let error = errorMessage {
+                            VStack(spacing: 16) {
+                                Image(systemName: "exclamationmark.triangle.fill")
+                                    .font(.system(size: 40))
+                                    .foregroundColor(.red)
                                 Text(error)
+                                    .font(.title3)
                                     .foregroundColor(.red)
                                     .multilineTextAlignment(.center)
                                     .padding(.horizontal)
                             }
-                        }
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    } else {
-                        VStack(alignment: .leading, spacing: 4) {
-                            if let siteTitle = config?.title {
-                                Text(siteTitle)
+                        } else {
+                            VStack(spacing: 16) {
+                                Image(systemName: "folder.badge.questionmark")
+                                    .font(.system(size: 40))
+                                    .foregroundStyle(.secondary)
+                                Text("Open or create a site to start editing")
                                     .font(.title3)
-                                    .bold()
-                                    .padding(.horizontal)
+                                    .foregroundStyle(.secondary)
                             }
-                            if let contentErrorMessage {
-                                Text(contentErrorMessage)
-                                    .font(.footnote)
-                                    .foregroundStyle(.red)
-                                    .padding(.horizontal)
-                            }
-                            List(selection: $selectedPostID) {
-                                ForEach(contentSections, id: \.section) { section in
-                                    Section(section.section) {
-                                        ForEach(section.items) { item in
-                                            HStack(spacing: 8) {
-                                                Text(item.displayTitle)
-                                                if item.isDraft {
-                                                    Text("Draft")
-                                                        .font(.caption2)
-                                                        .foregroundStyle(.secondary)
-                                                }
-                                            }
-                                            .tag(item.id as String?)
-                                        }
-                                    }
-                                }
-                            }
-                            .listStyle(.inset)
                         }
                     }
                 }
-                .frame(minWidth: 180, idealWidth: 220, maxWidth: 260)
-                .transition(.move(edge: .leading))
-            } else {
-                VStack {
-                    Button(action: { showSidebar = true }) {
-                        Image(systemName: "sidebar.right")
-                    }
-                    .buttonStyle(.plain)
-                    Spacer()
-                }
-                .frame(width: 20)
             }
             Divider()
-            // Main 2-pane editor
-            ZStack {
-                HStack(spacing: 0) {
-                    VStack(alignment: .leading) {
-                        Text("Markdown Editor")
-                            .font(.caption)
-                            .padding(.top, 8)
-                        TextEditor(text: $markdownText)
-                            .font(.system(.body, design: .monospaced))
-                            .padding([.leading, .trailing, .bottom], 8)
-                    }
-                    .frame(minWidth: 300, idealWidth: 400)
-                    Divider()
-                    VStack(alignment: .leading) {
-                        Text("Preview")
-                            .font(.caption)
-                            .padding(.top, 8)
-                        WebView(url: URL(string: "http://localhost:1313")!)
-                            .padding([.leading, .trailing, .bottom], 8)
-                    }
-                }
-                .frame(maxWidth: .infinity)
-                .disabled(!siteIsOpen || hugoStatus != .compatible)
-                
-                if !siteIsOpen {
-                    Rectangle()
-                        .fill(.thinMaterial)
-                        .opacity(0.80)
-                        .ignoresSafeArea()
-                    
-                    if isLoading {
-                        ProgressView("Loading site...")
-                            .font(.title3)
-                            .foregroundStyle(.secondary)
-                    } else if let error = errorMessage {
-                        VStack(spacing: 16) {
-                            Image(systemName: "exclamationmark.triangle.fill")
-                                .font(.system(size: 40))
-                                .foregroundColor(.red)
-                            Text(error)
-                                .font(.title3)
-                                .foregroundColor(.red)
-                                .multilineTextAlignment(.center)
-                                .padding(.horizontal)
-                        }
-                    } else {
-                        VStack(spacing: 16) {
-                            Image(systemName: "folder.badge.questionmark")
-                                .font(.system(size: 40))
-                                .foregroundStyle(.secondary)
-                            Text("Open or create a site to start editing")
-                                .font(.title3)
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-                }
-            }
+            serverStatusBar
         }
         .animation(.default, value: showSidebar)
+        .onDisappear {
+            stopHugoServer(hugoServerProcess)
+            hugoServerProcess = nil
+            previewURL = nil
+            hugoServerStatus = HugoServerStatus(phase: .stopped, message: "No server running", serverURL: nil)
+        }
         .onChange(of: selectedPostID) { _, newValue in
             guard let newValue,
                   let siteURL,
                   let selectedItem = contentItems.first(where: { $0.id == newValue }) else {
                 return
             }
+
+            updatePreviewURL(for: selectedItem)
 
             Task {
                 do {
@@ -301,11 +326,34 @@ struct ContentView: View {
                     do {
                         let configResult = try await loadHugoConfigAsync(from: url)
                         let loadedContentItems = try await loadHugoContentListAsync(from: url)
+                        let serverProcess: Process?
+
+                        if loadedContentItems.isEmpty {
+                            AppLogger.server.notice("Skipping Hugo server start because no Hugo content items were found in \(url.path, privacy: .public)")
+                            await MainActor.run {
+                                previewURL = nil
+                                hugoServerStatus = HugoServerStatus(phase: .stopped, message: "No Hugo content found", serverURL: nil)
+                            }
+                            serverProcess = nil
+                        } else {
+                            serverProcess = try startHugoServer(from: url) { status in
+                                hugoServerStatus = status
+                                if let serverURL = status.serverURL {
+                                    previewURL = previewURLForSelectedPost(using: serverURL)
+                                } else if status.phase == .stopped || status.phase == .failed {
+                                    previewURL = nil
+                                }
+                            }
+                        }
+
                         DispatchQueue.main.async {
+                            stopHugoServer(hugoServerProcess)
                             config = configResult
                             contentItems = loadedContentItems
                             selectedPostID = loadedContentItems.first?.id
                             siteURL = url
+                            hugoServerProcess = serverProcess
+                            previewURL = previewURLForSelectedPost(using: hugoServerStatus.serverURL)
                             siteIsOpen = true
                             isLoading = false
                             errorMessage = nil
@@ -314,6 +362,8 @@ struct ContentView: View {
                     } catch {
                         AppLogger.app.error("Failed to load Hugo config for site at \(url.path, privacy: .public): \(error.localizedDescription, privacy: .public)")
                         DispatchQueue.main.async {
+                            stopHugoServer(hugoServerProcess)
+                            hugoServerProcess = nil
                             errorMessage = "Failed to load Hugo site: \(error.localizedDescription)"
                             isLoading = false
                             config = nil
@@ -321,11 +371,105 @@ struct ContentView: View {
                             selectedPostID = nil
                             siteURL = nil
                             siteIsOpen = false
+                            previewURL = nil
+                            hugoServerStatus = HugoServerStatus(phase: .failed, message: "Server unavailable", serverURL: nil)
                             contentErrorMessage = nil
                         }
                     }
                 }
             }
+        }
+    }
+
+    private var serverStatusBar: some View {
+        HStack(spacing: 10) {
+            Circle()
+                .fill(serverStatusColor)
+                .frame(width: 9, height: 9)
+
+            Text(serverStatusTitle)
+                .font(.caption)
+                .fontWeight(.semibold)
+
+            Text(hugoServerStatus.message)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+
+            Spacer()
+
+            if let serverURL = hugoServerStatus.serverURL {
+                Text(serverURL.absoluteString)
+                    .font(.caption.monospaced())
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(.bar)
+    }
+
+    private func updatePreviewURL(for item: HugoContentItem) {
+        previewURL = previewURL(for: item, serverURL: hugoServerStatus.serverURL)
+    }
+
+    private func previewURLForSelectedPost(using serverURL: URL?) -> URL? {
+        guard let selectedPostID,
+              let selectedItem = contentItems.first(where: { $0.id == selectedPostID }) else {
+            return serverURL
+        }
+
+        return previewURL(for: selectedItem, serverURL: serverURL)
+    }
+
+    private func previewURL(for item: HugoContentItem, serverURL: URL?) -> URL? {
+        guard let serverURL else { return nil }
+
+        if let permalinkURL = URL(string: item.permalink),
+           let components = URLComponents(url: permalinkURL, resolvingAgainstBaseURL: false) {
+            var serverComponents = URLComponents(url: serverURL, resolvingAgainstBaseURL: false)
+            serverComponents?.path = components.path.isEmpty ? "/" : components.path
+            serverComponents?.query = components.query
+            serverComponents?.fragment = components.fragment
+            return serverComponents?.url
+        }
+
+        if item.permalink.hasPrefix("/") {
+            return serverURL.appending(path: String(item.permalink.dropFirst()))
+        }
+
+        return serverURL
+    }
+
+    private var serverStatusTitle: String {
+        switch hugoServerStatus.phase {
+        case .stopped:
+            "Stopped"
+        case .starting:
+            "Starting"
+        case .building:
+            "Building"
+        case .serving:
+            "Serving"
+        case .warning:
+            "Warning"
+        case .failed:
+            "Failed"
+        }
+    }
+
+    private var serverStatusColor: Color {
+        switch hugoServerStatus.phase {
+        case .stopped:
+            .secondary
+        case .starting, .building:
+            .orange
+        case .serving:
+            .green
+        case .warning:
+            .yellow
+        case .failed:
+            .red
         }
     }
 }
