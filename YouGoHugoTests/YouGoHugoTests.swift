@@ -1,10 +1,4 @@
-//
-//  YouGoHugoTests.swift
-//  YouGoHugoTests
-//
-//  Created by Jachin Rupe on 3/20/26.
-//
-
+import Foundation
 import Testing
 @testable import YouGoHugo
 
@@ -37,5 +31,24 @@ struct YouGoHugoTests {
         let resolvedURL = hugoExecutableURL(environment: [:])
 
         #expect(resolvedURL == executableURL)
+    }
+
+    @Test
+    func parsesHugoListCSVRows() throws {
+        let output = """
+        path,slug,title,date,expiryDate,publishDate,draft,permalink,kind,section
+        content/posts/hello.md,,Hello World,0001-01-01T00:00:00Z,0001-01-01T00:00:00Z,0001-01-01T00:00:00Z,false,https://example.org/posts/hello/,page,posts
+        "content/notes/with,comma.md",,"Title, With Comma",0001-01-01T00:00:00Z,0001-01-01T00:00:00Z,0001-01-01T00:00:00Z,true,https://example.org/notes/with-comma/,page,notes
+        """
+
+        let items = try parseHugoContentList(output)
+
+        #expect(items.count == 2)
+        #expect(items[0].path == "content/posts/hello.md")
+        #expect(items[0].displayTitle == "Hello World")
+        #expect(items[0].sectionTitle == "posts")
+        #expect(items[1].path == "content/notes/with,comma.md")
+        #expect(items[1].title == "Title, With Comma")
+        #expect(items[1].isDraft)
     }
 }

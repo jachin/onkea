@@ -5,25 +5,37 @@ import OSLog
 
 struct ContentView: View {
     @State private var showSidebar = true
-    @State private var selectedPost: String? = nil
+    @State private var selectedPostID: String? = nil
     @State private var markdownText: String = ""
     @State private var siteIsOpen = false
 
     @State private var isLoading = false
     @State private var errorMessage: String? = nil
-    @State private var configContent: String? = nil
     @State private var siteURL: URL? = nil
     @State private var config: HugoConfig? = nil
+    @State private var contentItems: [HugoContentItem] = []
+    @State private var contentErrorMessage: String? = nil
 
     @State private var hugoStatus: HugoStatus = .checking
 
-    // Mock post titles; replace with your actual posts later.
-    let postTitles = [
-        "Welcome to Hugo",
-        "Getting Started Guide",
-        "Markdown Syntax Tips",
-        "Deploying Your Site"
-    ]
+    private var contentSections: [(section: String, items: [HugoContentItem])] {
+        let grouped = Dictionary(grouping: contentItems) { $0.sectionTitle }
+
+        return grouped
+            .map { section, items in
+                (
+                    section,
+                    items.sorted {
+                        let titleComparison = $0.displayTitle.localizedCaseInsensitiveCompare($1.displayTitle)
+                        if titleComparison == .orderedSame {
+                            return $0.path.localizedCaseInsensitiveCompare($1.path) == .orderedAscending
+                        }
+                        return titleComparison == .orderedAscending
+                    }
+                )
+            }
+            .sorted { $0.section.localizedCaseInsensitiveCompare($1.section) == .orderedAscending }
+    }
     
     var body: some View {
         HStack(spacing: 0) {
@@ -66,10 +78,27 @@ struct ContentView: View {
                                     .bold()
                                     .padding(.horizontal)
                             }
-                            List(selection: $selectedPost) {
-                                ForEach(postTitles, id: \.self) { title in
-                                    Text(title)
-                                        .tag(title as String?)
+                            if let contentErrorMessage {
+                                Text(contentErrorMessage)
+                                    .font(.footnote)
+                                    .foregroundStyle(.red)
+                                    .padding(.horizontal)
+                            }
+                            List(selection: $selectedPostID) {
+                                ForEach(contentSections, id: \.section) { section in
+                                    Section(section.section) {
+                                        ForEach(section.items) { item in
+                                            HStack(spacing: 8) {
+                                                Text(item.displayTitle)
+                                                if item.isDraft {
+                                                    Text("Draft")
+                                                        .font(.caption2)
+                                                        .foregroundStyle(.secondary)
+                                                }
+                                            }
+                                            .tag(item.id as String?)
+                                        }
+                                    }
                                 }
                             }
                             .listStyle(.inset)
@@ -148,9 +177,26 @@ struct ContentView: View {
             }
         }
         .animation(.default, value: showSidebar)
-        .onChange(of: selectedPost) { _, newValue in
-            if let title = newValue {
-                markdownText = "# \(title)\n\nThis is a mock post. Replace with real post content."
+        .onChange(of: selectedPostID) { _, newValue in
+            guard let newValue,
+                  let siteURL,
+                  let selectedItem = contentItems.first(where: { $0.id == newValue }) else {
+                return
+            }
+
+            Task {
+                do {
+                    let content = try await loadContentBodyAsync(from: siteURL, relativePath: selectedItem.path)
+                    await MainActor.run {
+                        markdownText = content
+                        contentErrorMessage = nil
+                    }
+                } catch {
+                    AppLogger.content.error("Failed to load content body for \(selectedItem.path, privacy: .public): \(error.localizedDescription, privacy: .public)")
+                    await MainActor.run {
+                        contentErrorMessage = "Failed to load content: \(error.localizedDescription)"
+                    }
+                }
             }
         }
         .overlay {
@@ -254,23 +300,28 @@ struct ContentView: View {
                 Task {
                     do {
                         let configResult = try await loadHugoConfigAsync(from: url)
+                        let loadedContentItems = try await loadHugoContentListAsync(from: url)
                         DispatchQueue.main.async {
                             config = configResult
-                            configContent = nil
+                            contentItems = loadedContentItems
+                            selectedPostID = loadedContentItems.first?.id
                             siteURL = url
                             siteIsOpen = true
                             isLoading = false
                             errorMessage = nil
+                            contentErrorMessage = nil
                         }
                     } catch {
                         AppLogger.app.error("Failed to load Hugo config for site at \(url.path, privacy: .public): \(error.localizedDescription, privacy: .public)")
                         DispatchQueue.main.async {
-                            errorMessage = "Failed to load Hugo config: \(error.localizedDescription)"
+                            errorMessage = "Failed to load Hugo site: \(error.localizedDescription)"
                             isLoading = false
                             config = nil
-                            configContent = nil
+                            contentItems = []
+                            selectedPostID = nil
                             siteURL = nil
                             siteIsOpen = false
+                            contentErrorMessage = nil
                         }
                     }
                 }
