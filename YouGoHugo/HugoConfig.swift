@@ -16,10 +16,6 @@ public struct HugoConfig: Decodable, Equatable {
     public var markup: [String: AnyCodable]?
     public var additional: [String: AnyCodable] = [:]
 
-    private enum CodingKeys: String, CodingKey, CaseIterable {
-        case title, baseURL, languageCode, theme, params, menus, outputs, taxonomies, languages, permalinks, markup
-    }
-
     public init(
         title: String? = nil,
         baseURL: String? = nil,
@@ -49,27 +45,84 @@ public struct HugoConfig: Decodable, Equatable {
     }
 
     public init(from decoder: Decoder) throws {
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-        title = try container.decodeIfPresent(String.self, forKey: .title)
-        baseURL = try container.decodeIfPresent(String.self, forKey: .baseURL)
-        languageCode = try container.decodeIfPresent(String.self, forKey: .languageCode)
-        theme = try container.decodeIfPresent(String.self, forKey: .theme)
-        params = try container.decodeIfPresent([String: AnyCodable].self, forKey: .params)
-        menus = try container.decodeIfPresent([String: AnyCodable].self, forKey: .menus)
-        outputs = try container.decodeIfPresent([String: AnyCodable].self, forKey: .outputs)
-        taxonomies = try container.decodeIfPresent([String: String].self, forKey: .taxonomies)
-        languages = try container.decodeIfPresent([String: AnyCodable].self, forKey: .languages)
-        permalinks = try container.decodeIfPresent([String: String].self, forKey: .permalinks)
-        markup = try container.decodeIfPresent([String: AnyCodable].self, forKey: .markup)
+        let container = try decoder.container(keyedBy: AnyCodingKey.self)
+        title = container.decodeString(forKeys: ["title"])
+        baseURL = container.decodeString(forKeys: ["baseURL", "baseurl"])
+        languageCode = container.decodeString(forKeys: ["languageCode", "languagecode"])
+        theme = container.decodeTheme(forKeys: ["theme"])
+        params = container.decodeDictionary(forKeys: ["params"])
+        menus = container.decodeDictionary(forKeys: ["menus"])
+        outputs = container.decodeDictionary(forKeys: ["outputs"])
+        taxonomies = container.decodeStringDictionary(forKeys: ["taxonomies"])
+        languages = container.decodeDictionary(forKeys: ["languages"])
+        permalinks = container.decodeStringDictionary(forKeys: ["permalinks"])
+        markup = container.decodeDictionary(forKeys: ["markup"])
 
         // Collect unknown keys
-        let raw = try decoder.container(keyedBy: AnyCodingKey.self)
-        let knownKeys = Set(CodingKeys.allCases.map { $0.rawValue })
-        for key in raw.allKeys {
+        let knownKeys: Set<String> = [
+            "title",
+            "baseURL", "baseurl",
+            "languageCode", "languagecode",
+            "theme",
+            "params",
+            "menus",
+            "outputs",
+            "taxonomies",
+            "languages",
+            "permalinks",
+            "markup"
+        ]
+        for key in container.allKeys {
             if !knownKeys.contains(key.stringValue) {
-                additional[key.stringValue] = try raw.decode(AnyCodable.self, forKey: key)
+                additional[key.stringValue] = try container.decode(AnyCodable.self, forKey: key)
             }
         }
+    }
+}
+
+private extension KeyedDecodingContainer where K == AnyCodingKey {
+    func decodeString(forKeys keys: [String]) -> String? {
+        for key in keys {
+            let codingKey = AnyCodingKey(key)
+            if let value = try? decodeIfPresent(String.self, forKey: codingKey) {
+                return value
+            }
+        }
+        return nil
+    }
+
+    func decodeTheme(forKeys keys: [String]) -> String? {
+        for key in keys {
+            let codingKey = AnyCodingKey(key)
+            if let value = try? decodeIfPresent(String.self, forKey: codingKey) {
+                return value
+            }
+            if let values = try? decodeIfPresent([String].self, forKey: codingKey),
+               let firstTheme = values.first {
+                return firstTheme
+            }
+        }
+        return nil
+    }
+
+    func decodeDictionary(forKeys keys: [String]) -> [String: AnyCodable]? {
+        for key in keys {
+            let codingKey = AnyCodingKey(key)
+            if let value = try? decodeIfPresent([String: AnyCodable].self, forKey: codingKey) {
+                return value
+            }
+        }
+        return nil
+    }
+
+    func decodeStringDictionary(forKeys keys: [String]) -> [String: String]? {
+        for key in keys {
+            let codingKey = AnyCodingKey(key)
+            if let value = try? decodeIfPresent([String: String].self, forKey: codingKey) {
+                return value
+            }
+        }
+        return nil
     }
 }
 
@@ -186,7 +239,7 @@ public func loadHugoConfigAsync(from directory: URL) async throws -> HugoConfig 
     process.standardOutput = outputPipe
     process.standardError = errorPipe
 
-    AppLogger.config.notice("Loading Hugo config from \(directory.path, privacy: .public) using \(executableURL.path, privacy: .public)")
+    AppLogger.config.notice("Loading Hugo config via hugo CLI from \(directory.path, privacy: .public) using \(executableURL.path, privacy: .public)")
 
     do {
         try process.run()
@@ -228,8 +281,14 @@ public func loadHugoConfigAsync(from directory: URL) async throws -> HugoConfig 
                     AppLogger.config.notice("Loaded Hugo config successfully from \(directory.path, privacy: .public)")
                     continuation.resume(returning: config)
                 } catch {
-                    AppLogger.config.error("Failed to decode Hugo config: \(error.localizedDescription, privacy: .public)")
-                    continuation.resume(throwing: error)
+                    AppLogger.config.error("Failed to decode hugo config command output: \(error.localizedDescription, privacy: .public)")
+                    continuation.resume(
+                        throwing: NSError(
+                            domain: "HugoConfig",
+                            code: 4,
+                            userInfo: [NSLocalizedDescriptionKey: "The hugo config command returned output that could not be decoded: \(error.localizedDescription)"]
+                        )
+                    )
                 }
             }
         }

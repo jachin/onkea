@@ -2,7 +2,6 @@ import SwiftUI
 import AppKit
 import Foundation
 import OSLog
-import TOMLKit
 
 struct ContentView: View {
     @State private var showSidebar = true
@@ -264,9 +263,9 @@ struct ContentView: View {
                             errorMessage = nil
                         }
                     } catch {
-                        AppLogger.app.error("Failed to open Hugo site at \(url.path, privacy: .public): \(error.localizedDescription, privacy: .public)")
+                        AppLogger.app.error("Failed to load Hugo config for site at \(url.path, privacy: .public): \(error.localizedDescription, privacy: .public)")
                         DispatchQueue.main.async {
-                            errorMessage = "Failed to load or parse config.toml: \(error.localizedDescription)"
+                            errorMessage = "Failed to load Hugo config: \(error.localizedDescription)"
                             isLoading = false
                             config = nil
                             configContent = nil
