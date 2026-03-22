@@ -1,4 +1,5 @@
 import Foundation
+import OSLog
 import TOMLKit
 
 public struct HugoConfig: Decodable, Equatable {
@@ -167,3 +168,70 @@ extension AnyCodable {
     }
 }
 
+public func loadHugoConfigAsync(from directory: URL) async throws -> HugoConfig {
+    guard let executableURL = hugoExecutableURL() else {
+        throw NSError(
+            domain: "HugoConfig",
+            code: 3,
+            userInfo: [NSLocalizedDescriptionKey: "Could not find a Hugo executable."]
+        )
+    }
+
+    let process = Process()
+    process.executableURL = executableURL
+    process.arguments = ["config", "--printZero", "--format", "toml"]
+    process.currentDirectoryURL = directory
+    let outputPipe = Pipe()
+    let errorPipe = Pipe()
+    process.standardOutput = outputPipe
+    process.standardError = errorPipe
+
+    AppLogger.config.notice("Loading Hugo config from \(directory.path, privacy: .public) using \(executableURL.path, privacy: .public)")
+
+    do {
+        try process.run()
+    } catch {
+        AppLogger.config.error("Failed to start Hugo config process: \(error.localizedDescription, privacy: .public)")
+        throw error
+    }
+
+    return try await withCheckedThrowingContinuation { continuation in
+        DispatchQueue.global(qos: .userInitiated).async {
+            process.waitUntilExit()
+            let data = outputPipe.fileHandleForReading.readDataToEndOfFile()
+            let errorData = errorPipe.fileHandleForReading.readDataToEndOfFile()
+            let standardError = String(data: errorData, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+
+            guard process.terminationStatus == 0 else {
+                AppLogger.config.error("Hugo config command exited with status \(process.terminationStatus). stderr: \(standardError, privacy: .public)")
+                continuation.resume(
+                    throwing: NSError(
+                        domain: "HugoConfig",
+                        code: Int(process.terminationStatus),
+                        userInfo: [NSLocalizedDescriptionKey: standardError.isEmpty ? "Hugo config command failed." : standardError]
+                    )
+                )
+                return
+            }
+
+            guard let output = String(data: data, encoding: .utf8) else {
+                AppLogger.config.error("Hugo config command produced unreadable output")
+                continuation.resume(throwing: NSError(domain: "HugoConfig", code: 2, userInfo: [NSLocalizedDescriptionKey: "No output from hugo"]))
+                return
+            }
+            // hugo --printZero splits multiple configs with null bytes.
+            let configString = output.components(separatedBy: "\0").first?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            Task { @MainActor in
+                do {
+                    let decoder = TOMLDecoder()
+                    let config = try decoder.decode(HugoConfig.self, from: configString)
+                    AppLogger.config.notice("Loaded Hugo config successfully from \(directory.path, privacy: .public)")
+                    continuation.resume(returning: config)
+                } catch {
+                    AppLogger.config.error("Failed to decode Hugo config: \(error.localizedDescription, privacy: .public)")
+                    continuation.resume(throwing: error)
+                }
+            }
+        }
+    }
+}

@@ -1,5 +1,7 @@
 import SwiftUI
 import AppKit
+import Foundation
+import OSLog
 import TOMLKit
 
 struct ContentView: View {
@@ -13,6 +15,8 @@ struct ContentView: View {
     @State private var configContent: String? = nil
     @State private var siteURL: URL? = nil
     @State private var config: HugoConfig? = nil
+
+    @State private var hugoStatus: HugoStatus = .checking
 
     // Mock post titles; replace with your actual posts later.
     let postTitles = [
@@ -108,7 +112,7 @@ struct ContentView: View {
                     }
                 }
                 .frame(maxWidth: .infinity)
-                .disabled(!siteIsOpen)
+                .disabled(!siteIsOpen || hugoStatus != .compatible)
                 
                 if !siteIsOpen {
                     Rectangle()
@@ -150,6 +154,89 @@ struct ContentView: View {
                 markdownText = "# \(title)\n\nThis is a mock post. Replace with real post content."
             }
         }
+        .overlay {
+            switch hugoStatus {
+            case .checking:
+                Color(.black)
+                    .opacity(0.25)
+                    .ignoresSafeArea()
+                    .overlay {
+                        ProgressView("Checking Hugo version...")
+                            .font(.title2)
+                            .padding()
+                            .background(.thinMaterial)
+                            .cornerRadius(10)
+                    }
+            case .notInstalled:
+                Color(.black)
+                    .opacity(0.25)
+                    .ignoresSafeArea()
+                    .overlay {
+                        VStack(spacing: 20) {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .font(.system(size: 50))
+                                .foregroundColor(.red)
+                            Text("Hugo is not installed.\nPlease install Hugo before using this app.")
+                                .multilineTextAlignment(.center)
+                                .font(.title3)
+                            Button("Quit") {
+                                NSApp.terminate(nil)
+                            }
+                            .keyboardShortcut(.cancelAction)
+                            .controlSize(.large)
+                        }
+                        .padding()
+                        .background(.regularMaterial)
+                        .cornerRadius(12)
+                        .frame(maxWidth: 400)
+                    }
+            case .incompatibleVersion(let found):
+                Color(.black)
+                    .opacity(0.25)
+                    .ignoresSafeArea()
+                    .overlay {
+                        VStack(spacing: 20) {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .font(.system(size: 50))
+                                .foregroundColor(.red)
+                            Text("Hugo version \(found.versionString) is not supported.\nPlease install Hugo v0.158.0 or newer.")
+                                .multilineTextAlignment(.center)
+                                .font(.title3)
+                            Button("Quit") {
+                                NSApp.terminate(nil)
+                            }
+                            .keyboardShortcut(.cancelAction)
+                            .controlSize(.large)
+                        }
+                        .padding()
+                        .background(.regularMaterial)
+                        .cornerRadius(12)
+                        .frame(maxWidth: 400)
+                    }
+            case .compatible:
+                EmptyView()
+            }
+        }
+        .task {
+            do {
+                let foundVersionOpt: HugoVersion? = try await checkHugoVersion()
+                if let foundVersion = foundVersionOpt {
+                    if foundVersion >= minimumHugoVersion {
+                        AppLogger.app.notice("Hugo compatibility check passed with version \(foundVersion.versionString, privacy: .public)")
+                        hugoStatus = .compatible
+                    } else {
+                        AppLogger.app.error("Hugo version \(foundVersion.versionString, privacy: .public) is below minimum \(minimumHugoVersion.versionString, privacy: .public)")
+                        hugoStatus = .incompatibleVersion(found: foundVersion)
+                    }
+                } else {
+                    AppLogger.app.error("Hugo compatibility check returned no version")
+                    hugoStatus = .notInstalled
+                }
+            } catch {
+                AppLogger.app.error("Hugo compatibility check failed: \(error.localizedDescription, privacy: .public)")
+                hugoStatus = .notInstalled
+            }
+        }
     }
     
     private func openSite() {
@@ -160,38 +247,26 @@ struct ContentView: View {
         panel.prompt = "Open"
         panel.begin { response in
             if response == .OK, let url = panel.url {
+                AppLogger.app.notice("Opening Hugo site at \(url.path, privacy: .public)")
                 DispatchQueue.main.async {
                     isLoading = true
                     errorMessage = nil
                 }
-                let configURL = url.appendingPathComponent("config.toml")
-                DispatchQueue.global(qos: .userInitiated).async {
-                    if FileManager.default.fileExists(atPath: configURL.path) {
-                        do {
-                            let content = try String(contentsOf: configURL, encoding: .utf8)
-                            let decoder = TOMLDecoder()
-                            let configResult = try decoder.decode(HugoConfig.self, from: content)
-                            DispatchQueue.main.async {
-                                config = configResult
-                                configContent = content
-                                siteURL = url
-                                siteIsOpen = true
-                                isLoading = false
-                                errorMessage = nil
-                            }
-                        } catch {
-                            DispatchQueue.main.async {
-                                errorMessage = "Failed to load or parse config.toml: \(error.localizedDescription)"
-                                isLoading = false
-                                config = nil
-                                configContent = nil
-                                siteURL = nil
-                                siteIsOpen = false
-                            }
-                        }
-                    } else {
+                Task {
+                    do {
+                        let configResult = try await loadHugoConfigAsync(from: url)
                         DispatchQueue.main.async {
-                            errorMessage = "No config.toml found in selected folder."
+                            config = configResult
+                            configContent = nil
+                            siteURL = url
+                            siteIsOpen = true
+                            isLoading = false
+                            errorMessage = nil
+                        }
+                    } catch {
+                        AppLogger.app.error("Failed to open Hugo site at \(url.path, privacy: .public): \(error.localizedDescription, privacy: .public)")
+                        DispatchQueue.main.async {
+                            errorMessage = "Failed to load or parse config.toml: \(error.localizedDescription)"
                             isLoading = false
                             config = nil
                             configContent = nil
