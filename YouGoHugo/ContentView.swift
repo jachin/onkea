@@ -129,8 +129,7 @@ struct ContentView: View {
                             Text("Markdown Editor")
                                 .font(.caption)
                                 .padding(.top, 8)
-                            TextEditor(text: $markdownText)
-                                .font(.system(.body, design: .monospaced))
+                            MarkdownEditorView(text: $markdownText)
                                 .padding([.leading, .trailing, .bottom], 8)
                         }
                         .frame(minWidth: 300, idealWidth: 400)
