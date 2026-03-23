@@ -51,4 +51,59 @@ struct YouGoHugoTests {
         #expect(items[1].title == "Title, With Comma")
         #expect(items[1].isDraft)
     }
+
+    @Test
+    func tracksHugoServerRebuildLifecycle() throws {
+        var state = HugoServerParseState()
+
+        let initialBuild = nextHugoServerStatus(
+            for: "Start building sites …",
+            isError: false,
+            state: &state
+        )
+        #expect(initialBuild?.phase == .building)
+        #expect(initialBuild?.message == "Building site…")
+
+        let serverURLLine = nextHugoServerStatus(
+            for: "Web Server is available at http://localhost:54239/ (bind address 127.0.0.1)",
+            isError: false,
+            state: &state
+        )
+        #expect(serverURLLine?.phase == .building)
+        #expect(serverURLLine?.serverURL == URL(string: "http://localhost:54239/"))
+        #expect(serverURLLine?.message == "Building site…")
+
+        let changeDetected = nextHugoServerStatus(
+            for: "Change detected, rebuilding site (#1).",
+            isError: false,
+            state: &state
+        )
+        #expect(changeDetected?.phase == .building)
+        #expect(changeDetected?.message == "Change detected, rebuilding site (#1).")
+
+        let sourceChanged = nextHugoServerStatus(
+            for: "Source changed /posts/best-books/2025s-best-books.md",
+            isError: false,
+            state: &state
+        )
+        #expect(sourceChanged?.phase == .building)
+        #expect(sourceChanged?.message == "Source changed /posts/best-books/2025s-best-books.md")
+
+        let rebuildURLLine = nextHugoServerStatus(
+            for: "Web Server is available at http://localhost:54239/ (bind address 127.0.0.1)",
+            isError: false,
+            state: &state
+        )
+        #expect(rebuildURLLine?.phase == .building)
+        #expect(rebuildURLLine?.message == "Source changed /posts/best-books/2025s-best-books.md")
+
+        let total = nextHugoServerStatus(
+            for: "Total in 29 ms",
+            isError: false,
+            state: &state
+        )
+        #expect(total?.phase == .serving)
+        #expect(total?.message == "Total in 29 ms")
+        #expect(total?.serverURL == URL(string: "http://localhost:54239/"))
+    }
 }

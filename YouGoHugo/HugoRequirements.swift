@@ -156,9 +156,141 @@ public func checkHugoVersion() async throws -> HugoVersion {
     }
 }
 
+struct HugoServerParseState {
+    var currentServerURL: URL?
+    var currentStatus = HugoServerStatus(phase: .starting, message: "Starting Hugo server…", serverURL: nil)
+    var isBuilding = false
+}
+
+func nextHugoServerStatus(for rawLine: String, isError: Bool, state: inout HugoServerParseState) -> HugoServerStatus? {
+    let line = rawLine.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !line.isEmpty else { return nil }
+
+    if let serverURL = extractHugoServerURL(from: line) {
+        state.currentServerURL = serverURL
+
+        if state.isBuilding {
+            state.currentStatus = HugoServerStatus(
+                phase: .building,
+                message: state.currentStatus.message,
+                serverURL: serverURL
+            )
+        } else {
+            state.currentStatus = HugoServerStatus(
+                phase: .serving,
+                message: "Serving at \(serverURL.absoluteString)",
+                serverURL: serverURL
+            )
+        }
+
+        return state.currentStatus
+    }
+
+    if line.localizedCaseInsensitiveContains("Start building sites") {
+        state.isBuilding = true
+        state.currentStatus = HugoServerStatus(
+            phase: .building,
+            message: "Building site…",
+            serverURL: state.currentServerURL
+        )
+        return state.currentStatus
+    }
+
+    if line.localizedCaseInsensitiveContains("Change detected, rebuilding site") {
+        state.isBuilding = true
+        state.currentStatus = HugoServerStatus(
+            phase: .building,
+            message: line,
+            serverURL: state.currentServerURL
+        )
+        return state.currentStatus
+    }
+
+    if state.isBuilding, line.localizedCaseInsensitiveContains("Source changed") {
+        state.currentStatus = HugoServerStatus(
+            phase: .building,
+            message: line,
+            serverURL: state.currentServerURL
+        )
+        return state.currentStatus
+    }
+
+    if line.localizedCaseInsensitiveContains("Built in") || line.localizedCaseInsensitiveContains("Total in") {
+        state.isBuilding = false
+        state.currentStatus = HugoServerStatus(
+            phase: .serving,
+            message: line,
+            serverURL: state.currentServerURL
+        )
+        return state.currentStatus
+    }
+
+    if line.localizedCaseInsensitiveContains("port") &&
+        line.localizedCaseInsensitiveContains("already in use") {
+        state.isBuilding = false
+        state.currentStatus = HugoServerStatus(
+            phase: .warning,
+            message: line,
+            serverURL: state.currentServerURL
+        )
+        return state.currentStatus
+    }
+
+    if line.localizedCaseInsensitiveContains("Watching for changes") {
+        state.currentStatus = HugoServerStatus(
+            phase: .starting,
+            message: "Watching for changes…",
+            serverURL: state.currentServerURL
+        )
+        return state.currentStatus
+    }
+
+    if line.localizedCaseInsensitiveContains("Press Ctrl+C to stop") {
+        state.isBuilding = false
+        state.currentStatus = HugoServerStatus(
+            phase: .serving,
+            message: "Server running",
+            serverURL: state.currentServerURL
+        )
+        return state.currentStatus
+    }
+
+    if isError || line.localizedCaseInsensitiveContains("error") || line.localizedCaseInsensitiveContains("failed") {
+        state.isBuilding = false
+        state.currentStatus = HugoServerStatus(
+            phase: .failed,
+            message: line,
+            serverURL: state.currentServerURL
+        )
+        return state.currentStatus
+    }
+
+    if state.currentStatus.phase == .starting {
+        state.currentStatus = HugoServerStatus(
+            phase: .starting,
+            message: line,
+            serverURL: state.currentServerURL
+        )
+        return state.currentStatus
+    }
+
+    return nil
+}
+
+private func extractHugoServerURL(from line: String) -> URL? {
+    let marker = "Web Server is available at "
+    guard let range = line.range(of: marker) else {
+        return nil
+    }
+
+    let remainder = line[range.upperBound...]
+    let urlText = remainder.split(separator: " ").first.map(String.init) ?? String(remainder)
+    return URL(string: urlText.trimmingCharacters(in: CharacterSet(charactersIn: ".")))
+}
+
 private final class HugoServerOutputParser {
     private var buffer = ""
-    private var currentServerURL: URL?
+    private var state = HugoServerParseState()
     private let statusHandler: @MainActor (HugoServerStatus) -> Void
 
     init(statusHandler: @escaping @MainActor (HugoServerStatus) -> Void) {
@@ -197,58 +329,13 @@ private final class HugoServerOutputParser {
             AppLogger.server.notice("Hugo server stdout: \(line, privacy: .public)")
         }
 
+        guard let status = nextHugoServerStatus(for: line, isError: isError, state: &state) else {
+            return
+        }
+
         Task { @MainActor in
-            statusHandler(status(for: line, isError: isError))
+            statusHandler(status)
         }
-    }
-
-    private func status(for line: String, isError: Bool) -> HugoServerStatus {
-        if let serverURL = extractServerURL(from: line) {
-            currentServerURL = serverURL
-            return HugoServerStatus(
-                phase: .serving,
-                message: "Serving at \(serverURL.absoluteString)",
-                serverURL: serverURL
-            )
-        }
-
-        if line.localizedCaseInsensitiveContains("Start building sites") {
-            return HugoServerStatus(phase: .building, message: "Building site…", serverURL: currentServerURL)
-        }
-
-        if line.localizedCaseInsensitiveContains("Built in") {
-            return HugoServerStatus(phase: .serving, message: line, serverURL: currentServerURL)
-        }
-
-        if line.localizedCaseInsensitiveContains("port") &&
-            line.localizedCaseInsensitiveContains("already in use") {
-            return HugoServerStatus(phase: .warning, message: line, serverURL: currentServerURL)
-        }
-
-        if line.localizedCaseInsensitiveContains("Watching for changes") {
-            return HugoServerStatus(phase: .starting, message: "Watching for changes…", serverURL: currentServerURL)
-        }
-
-        if line.localizedCaseInsensitiveContains("Press Ctrl+C to stop") {
-            return HugoServerStatus(phase: .serving, message: "Server running", serverURL: currentServerURL)
-        }
-
-        if isError || line.localizedCaseInsensitiveContains("error") || line.localizedCaseInsensitiveContains("failed") {
-            return HugoServerStatus(phase: .failed, message: line, serverURL: currentServerURL)
-        }
-
-        return HugoServerStatus(phase: .starting, message: line, serverURL: currentServerURL)
-    }
-
-    private func extractServerURL(from line: String) -> URL? {
-        let marker = "Web Server is available at "
-        guard let range = line.range(of: marker) else {
-            return nil
-        }
-
-        let remainder = line[range.upperBound...]
-        let urlText = remainder.split(separator: " ").first.map(String.init) ?? String(remainder)
-        return URL(string: urlText.trimmingCharacters(in: CharacterSet(charactersIn: ".")))
     }
 }
 

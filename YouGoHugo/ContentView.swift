@@ -18,6 +18,9 @@ struct ContentView: View {
     @State private var contentItems: [HugoContentItem] = []
     @State private var contentErrorMessage: String? = nil
     @State private var hugoServerStatus = HugoServerStatus(phase: .stopped, message: "No server running", serverURL: nil)
+    @State private var savedContentByID: [String: String] = [:]
+    @State private var draftContentByID: [String: String] = [:]
+    @State private var isSaving = false
 
     @State private var hugoStatus: HugoStatus = .checking
 
@@ -94,6 +97,11 @@ struct ContentView: View {
                                             ForEach(section.items) { item in
                                                 HStack(spacing: 8) {
                                                     Text(item.displayTitle)
+                                                    if hasUnsavedChanges(for: item.id) {
+                                                        Circle()
+                                                            .fill(.yellow)
+                                                            .frame(width: 8, height: 8)
+                                                    }
                                                     if item.isDraft {
                                                         Text("Draft")
                                                             .font(.caption2)
@@ -126,9 +134,17 @@ struct ContentView: View {
                 ZStack {
                     HStack(spacing: 0) {
                         VStack(alignment: .leading) {
-                            Text("Markdown Editor")
-                                .font(.caption)
-                                .padding(.top, 8)
+                            HStack {
+                                Text("Markdown Editor")
+                                    .font(.caption)
+                                Spacer()
+                                Button("Save") {
+                                    saveSelectedPost()
+                                }
+                                .keyboardShortcut("s", modifiers: .command)
+                                .disabled(!canSaveSelectedPost)
+                            }
+                            .padding(.top, 8)
                             MarkdownEditorView(text: $markdownText)
                                 .padding([.leading, .trailing, .bottom], 8)
                         }
@@ -212,7 +228,10 @@ struct ContentView: View {
                 do {
                     let content = try await loadContentBodyAsync(from: siteURL, relativePath: selectedItem.path)
                     await MainActor.run {
-                        markdownText = content
+                        savedContentByID[selectedItem.id] = content
+                        let draftContent = draftContentByID[selectedItem.id] ?? content
+                        draftContentByID[selectedItem.id] = draftContent
+                        markdownText = draftContent
                         contentErrorMessage = nil
                     }
                 } catch {
@@ -222,6 +241,13 @@ struct ContentView: View {
                     }
                 }
             }
+        }
+        .onChange(of: markdownText) { _, newValue in
+            guard let selectedPostID else {
+                return
+            }
+
+            draftContentByID[selectedPostID] = newValue
         }
         .overlay {
             switch hugoStatus {
@@ -357,6 +383,10 @@ struct ContentView: View {
                             isLoading = false
                             errorMessage = nil
                             contentErrorMessage = nil
+                            savedContentByID = [:]
+                            draftContentByID = [:]
+                            markdownText = ""
+                            isSaving = false
                         }
                     } catch {
                         AppLogger.app.error("Failed to load Hugo config for site at \(url.path, privacy: .public): \(error.localizedDescription, privacy: .public)")
@@ -373,6 +403,10 @@ struct ContentView: View {
                             previewURL = nil
                             hugoServerStatus = HugoServerStatus(phase: .failed, message: "Server unavailable", serverURL: nil)
                             contentErrorMessage = nil
+                            savedContentByID = [:]
+                            draftContentByID = [:]
+                            markdownText = ""
+                            isSaving = false
                         }
                     }
                 }
@@ -438,6 +472,61 @@ struct ContentView: View {
         }
 
         return serverURL
+    }
+
+    private var canSaveSelectedPost: Bool {
+        guard let selectedPostID, siteURL != nil else {
+            return false
+        }
+
+        return hasUnsavedChanges(for: selectedPostID) && !isSaving
+    }
+
+    private func hasUnsavedChanges(for itemID: String) -> Bool {
+        guard let savedContent = savedContentByID[itemID],
+              let draftContent = draftContentByID[itemID] else {
+            return false
+        }
+
+        return savedContent != draftContent
+    }
+
+    private func saveSelectedPost() {
+        guard !isSaving,
+              let selectedPostID,
+              let siteURL,
+              let selectedItem = contentItems.first(where: { $0.id == selectedPostID }),
+              let draftContent = draftContentByID[selectedPostID],
+              hasUnsavedChanges(for: selectedPostID) else {
+            return
+        }
+
+        isSaving = true
+        contentErrorMessage = nil
+
+        Task {
+            let fileURL = siteURL.appendingPathComponent(selectedItem.path)
+
+            do {
+                try await Task.detached(priority: .userInitiated) {
+                    try draftContent.write(to: fileURL, atomically: true, encoding: .utf8)
+                }.value
+
+                AppLogger.content.notice("Saved content to \(selectedItem.path, privacy: .public)")
+
+                await MainActor.run {
+                    savedContentByID[selectedPostID] = draftContent
+                    isSaving = false
+                }
+            } catch {
+                AppLogger.content.error("Failed to save content for \(selectedItem.path, privacy: .public): \(error.localizedDescription, privacy: .public)")
+
+                await MainActor.run {
+                    contentErrorMessage = "Failed to save content: \(error.localizedDescription)"
+                    isSaving = false
+                }
+            }
+        }
     }
 
     private var serverStatusTitle: String {
