@@ -135,6 +135,7 @@ struct ContentView: View {
             serverStatusBar
         }
         .animation(.default, value: showSidebar)
+        .navigationTitle(windowTitle)
         .toolbar {
             ToolbarItem(placement: .navigation) {
                 Button {
@@ -409,7 +410,8 @@ struct ContentView: View {
             }
         }
         .padding(.horizontal, 12)
-        .padding(.vertical, 8)
+        .padding(.top, 8)
+        .padding(.bottom, 12)
         .background(.bar)
     }
 
@@ -451,6 +453,15 @@ struct ContentView: View {
         }
 
         return hasUnsavedChanges(for: selectedPostID) && !isSaving
+    }
+
+    private var windowTitle: String {
+        guard let title = config?.title?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !title.isEmpty else {
+            return "YouGoHugo"
+        }
+
+        return title
     }
 
     private var canSaveAnyPosts: Bool {

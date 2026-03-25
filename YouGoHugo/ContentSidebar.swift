@@ -122,13 +122,6 @@ struct ContentSidebar: View {
 
     private var openSiteState: some View {
         VStack(alignment: .leading, spacing: 4) {
-            if let siteTitle = config?.title {
-                Text(siteTitle)
-                    .font(.title3)
-                    .bold()
-                    .padding(.horizontal)
-            }
-
             if let contentErrorMessage {
                 Text(contentErrorMessage)
                     .font(.footnote)
