@@ -4,6 +4,8 @@ import Foundation
 import OSLog
 
 struct ContentView: View {
+    @EnvironmentObject private var sidebarNavigation: SidebarNavigationModel
+
     @State private var showSidebar = true
     @State private var selectedPostID: String? = nil
     @State private var markdownText: String = ""
@@ -24,112 +26,41 @@ struct ContentView: View {
 
     @State private var hugoStatus: HugoStatus = .checking
 
-    private var contentSections: [(section: String, items: [HugoContentItem])] {
-        let grouped = Dictionary(grouping: contentItems) { $0.sectionTitle }
-
-        return grouped
-            .map { section, items in
-                (
-                    section,
-                    items.sorted {
-                        let titleComparison = $0.displayTitle.localizedCaseInsensitiveCompare($1.displayTitle)
-                        if titleComparison == .orderedSame {
-                            return $0.path.localizedCaseInsensitiveCompare($1.path) == .orderedAscending
-                        }
-                        return titleComparison == .orderedAscending
-                    }
-                )
+    private var filteredContentItems: [HugoContentItem] {
+        switch sidebarNavigation.selectedTab {
+        case .posts:
+            contentItems.filter { item in
+                item.section.localizedCaseInsensitiveCompare("posts") == .orderedSame
             }
-            .sorted { $0.section.localizedCaseInsensitiveCompare($1.section) == .orderedAscending }
+        case .pages:
+            contentItems.filter { item in
+                item.section.localizedCaseInsensitiveCompare("posts") != .orderedSame
+            }
+        case .publishing, .siteSettings:
+            []
+        }
     }
     
     var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: 0) {
+                ContentSidebar(
+                    isVisible: $showSidebar,
+                    isSiteOpen: $siteIsOpen,
+                    selectedPostID: $selectedPostID,
+                    selectedTab: $sidebarNavigation.selectedTab,
+                    isLoading: isLoading,
+                    errorMessage: errorMessage,
+                    config: config,
+                    contentItems: filteredContentItems,
+                    contentErrorMessage: contentErrorMessage,
+                    hasUnsavedChanges: hasUnsavedChanges(for:),
+                    openSite: openSite,
+                    createSite: { siteIsOpen = true /* TODO: implement creation */ }
+                )
                 if showSidebar {
-                    VStack(alignment: .leading, spacing: 0) {
-                        HStack {
-                            Text("Posts")
-                                .font(.headline)
-                            Spacer()
-                            Button(action: { showSidebar = false }) {
-                                Image(systemName: "sidebar.left")
-                            }
-                            .buttonStyle(.plain)
-                        }
-                        .padding()
-                        if !siteIsOpen {
-                            VStack(spacing: 16) {
-                                Text("No site open")
-                                    .font(.subheadline)
-                                    .foregroundStyle(.secondary)
-                                Button("Open Site") { openSite() }
-                                Button("Create New Site") { siteIsOpen = true /* TODO: implement creation */ }
-                                if isLoading {
-                                    ProgressView("Loading site...")
-                                        .padding(.top)
-                                }
-                                if let error = errorMessage {
-                                    Text(error)
-                                        .foregroundColor(.red)
-                                        .multilineTextAlignment(.center)
-                                        .padding(.horizontal)
-                                }
-                            }
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        } else {
-                            VStack(alignment: .leading, spacing: 4) {
-                                if let siteTitle = config?.title {
-                                    Text(siteTitle)
-                                        .font(.title3)
-                                        .bold()
-                                        .padding(.horizontal)
-                                }
-                                if let contentErrorMessage {
-                                    Text(contentErrorMessage)
-                                        .font(.footnote)
-                                        .foregroundStyle(.red)
-                                        .padding(.horizontal)
-                                }
-                                List(selection: $selectedPostID) {
-                                    ForEach(contentSections, id: \.section) { section in
-                                        Section(section.section) {
-                                            ForEach(section.items) { item in
-                                                HStack(spacing: 8) {
-                                                    Text(item.displayTitle)
-                                                    if hasUnsavedChanges(for: item.id) {
-                                                        Circle()
-                                                            .fill(.yellow)
-                                                            .frame(width: 8, height: 8)
-                                                    }
-                                                    if item.isDraft {
-                                                        Text("Draft")
-                                                            .font(.caption2)
-                                                            .foregroundStyle(.secondary)
-                                                    }
-                                                }
-                                                .tag(item.id as String?)
-                                            }
-                                        }
-                                    }
-                                }
-                                .listStyle(.inset)
-                            }
-                        }
-                    }
-                    .frame(minWidth: 180, idealWidth: 220, maxWidth: 260)
-                    .transition(.move(edge: .leading))
-                } else {
-                    VStack {
-                        Button(action: { showSidebar = true }) {
-                            Image(systemName: "sidebar.right")
-                        }
-                        .buttonStyle(.plain)
-                        Spacer()
-                    }
-                    .frame(width: 20)
+                    Divider()
                 }
-                Divider()
                 // Main 2-pane editor
                 ZStack {
                     HStack(spacing: 0) {
@@ -138,11 +69,6 @@ struct ContentView: View {
                                 Text("Markdown Editor")
                                     .font(.caption)
                                 Spacer()
-                                Button("Save") {
-                                    saveSelectedPost()
-                                }
-                                .keyboardShortcut("s", modifiers: .command)
-                                .disabled(!canSaveSelectedPost)
                             }
                             .padding(.top, 8)
                             MarkdownEditorView(text: $markdownText)
@@ -209,11 +135,56 @@ struct ContentView: View {
             serverStatusBar
         }
         .animation(.default, value: showSidebar)
+        .toolbar {
+            ToolbarItem(placement: .navigation) {
+                Button {
+                    showSidebar.toggle()
+                } label: {
+                    Image(systemName: showSidebar ? "sidebar.left" : "sidebar.right")
+                }
+                .help(showSidebar ? "Hide Sidebar" : "Show Sidebar")
+            }
+
+            ToolbarItemGroup(placement: .principal) {
+                Button("Open", systemImage: "folder") {
+                    openSite()
+                }
+                .keyboardShortcut("o", modifiers: .command)
+                .disabled(hugoStatus != .compatible || isLoading)
+
+                Button("Save", systemImage: "square.and.arrow.down") {
+                    saveSelectedPost()
+                }
+                .keyboardShortcut("s", modifiers: .command)
+                .disabled(!canSaveSelectedPost)
+
+                Button("Save All", systemImage: "square.and.arrow.down.on.square") {
+                    saveAllPosts()
+                }
+                .keyboardShortcut("s", modifiers: [.command, .option])
+                .disabled(!canSaveAnyPosts)
+            }
+        }
+        .onAppear {
+            sidebarNavigation.isSiteOpen = siteIsOpen
+        }
         .onDisappear {
             stopHugoServer(hugoServerProcess)
             hugoServerProcess = nil
             previewURL = nil
             hugoServerStatus = HugoServerStatus(phase: .stopped, message: "No server running", serverURL: nil)
+        }
+        .onChange(of: siteIsOpen) { _, newValue in
+            sidebarNavigation.isSiteOpen = newValue
+            if !newValue {
+                sidebarNavigation.selectedTab = .posts
+            }
+        }
+        .onChange(of: sidebarNavigation.selectedTab) { _, _ in
+            syncSelectionWithVisibleTab()
+        }
+        .onChange(of: contentItems) { _, _ in
+            syncSelectionWithVisibleTab()
         }
         .onChange(of: selectedPostID) { _, newValue in
             guard let newValue,
@@ -375,7 +346,6 @@ struct ContentView: View {
                             stopHugoServer(hugoServerProcess)
                             config = configResult
                             contentItems = loadedContentItems
-                            selectedPostID = loadedContentItems.first?.id
                             siteURL = url
                             hugoServerProcess = serverProcess
                             previewURL = previewURLForSelectedPost(using: hugoServerStatus.serverURL)
@@ -387,6 +357,7 @@ struct ContentView: View {
                             draftContentByID = [:]
                             markdownText = ""
                             isSaving = false
+                            syncSelectionWithVisibleTab()
                         }
                     } catch {
                         AppLogger.app.error("Failed to load Hugo config for site at \(url.path, privacy: .public): \(error.localizedDescription, privacy: .public)")
@@ -482,6 +453,10 @@ struct ContentView: View {
         return hasUnsavedChanges(for: selectedPostID) && !isSaving
     }
 
+    private var canSaveAnyPosts: Bool {
+        siteURL != nil && contentItems.contains(where: { hasUnsavedChanges(for: $0.id) }) && !isSaving
+    }
+
     private func hasUnsavedChanges(for itemID: String) -> Bool {
         guard let savedContent = savedContentByID[itemID],
               let draftContent = draftContentByID[itemID] else {
@@ -492,12 +467,42 @@ struct ContentView: View {
     }
 
     private func saveSelectedPost() {
-        guard !isSaving,
-              let selectedPostID,
-              let siteURL,
-              let selectedItem = contentItems.first(where: { $0.id == selectedPostID }),
-              let draftContent = draftContentByID[selectedPostID],
+        guard let selectedPostID,
               hasUnsavedChanges(for: selectedPostID) else {
+            return
+        }
+
+        savePosts(withIDs: [selectedPostID])
+    }
+
+    private func saveAllPosts() {
+        let itemIDsToSave = contentItems
+            .map(\.id)
+            .filter(hasUnsavedChanges(for:))
+
+        guard !itemIDsToSave.isEmpty else {
+            return
+        }
+
+        savePosts(withIDs: itemIDsToSave)
+    }
+
+    private func savePosts(withIDs itemIDs: [String]) {
+        guard !isSaving, let siteURL else {
+            return
+        }
+
+        let pendingSaves = itemIDs.compactMap { itemID -> PendingSave? in
+            guard let item = contentItems.first(where: { $0.id == itemID }),
+                  let draftContent = draftContentByID[itemID],
+                  hasUnsavedChanges(for: itemID) else {
+                return nil
+            }
+
+            return PendingSave(itemID: itemID, item: item, draftContent: draftContent)
+        }
+
+        guard !pendingSaves.isEmpty else {
             return
         }
 
@@ -505,21 +510,26 @@ struct ContentView: View {
         contentErrorMessage = nil
 
         Task {
-            let fileURL = siteURL.appendingPathComponent(selectedItem.path)
-
             do {
                 try await Task.detached(priority: .userInitiated) {
-                    try draftContent.write(to: fileURL, atomically: true, encoding: .utf8)
+                    for pendingSave in pendingSaves {
+                        let fileURL = siteURL.appendingPathComponent(pendingSave.item.path)
+                        try pendingSave.draftContent.write(to: fileURL, atomically: true, encoding: .utf8)
+                    }
                 }.value
 
-                AppLogger.content.notice("Saved content to \(selectedItem.path, privacy: .public)")
+                for pendingSave in pendingSaves {
+                    AppLogger.content.notice("Saved content to \(pendingSave.item.path, privacy: .public)")
+                }
 
                 await MainActor.run {
-                    savedContentByID[selectedPostID] = draftContent
+                    for pendingSave in pendingSaves {
+                        savedContentByID[pendingSave.itemID] = pendingSave.draftContent
+                    }
                     isSaving = false
                 }
             } catch {
-                AppLogger.content.error("Failed to save content for \(selectedItem.path, privacy: .public): \(error.localizedDescription, privacy: .public)")
+                AppLogger.content.error("Failed to save content: \(error.localizedDescription, privacy: .public)")
 
                 await MainActor.run {
                     contentErrorMessage = "Failed to save content: \(error.localizedDescription)"
@@ -527,6 +537,28 @@ struct ContentView: View {
                 }
             }
         }
+    }
+
+    private func syncSelectionWithVisibleTab() {
+        let visibleIDs = Set(filteredContentItems.map(\.id))
+
+        guard sidebarNavigation.selectedTab == .posts || sidebarNavigation.selectedTab == .pages else {
+            selectedPostID = nil
+            markdownText = ""
+            return
+        }
+
+        guard !filteredContentItems.isEmpty else {
+            selectedPostID = nil
+            markdownText = ""
+            return
+        }
+
+        if let selectedPostID, visibleIDs.contains(selectedPostID) {
+            return
+        }
+
+        selectedPostID = filteredContentItems.first?.id
     }
 
     private var serverStatusTitle: String {
@@ -560,6 +592,12 @@ struct ContentView: View {
             .red
         }
     }
+}
+
+private struct PendingSave {
+    let itemID: String
+    let item: HugoContentItem
+    let draftContent: String
 }
 
 // NOTE: You will need to implement the WebView struct that wraps WKWebView for SwiftUI.

@@ -10,6 +10,8 @@ import SwiftData
 
 @main
 struct YouGoHugoApp: App {
+    @StateObject private var sidebarNavigation = SidebarNavigationModel()
+
     var sharedModelContainer: ModelContainer = {
         let schema = Schema([
             Item.self,
@@ -26,7 +28,11 @@ struct YouGoHugoApp: App {
     var body: some Scene {
         WindowGroup {
             ContentView()
+                .environmentObject(sidebarNavigation)
         }
         .modelContainer(sharedModelContainer)
+        .commands {
+            SidebarTabCommands(navigationModel: sidebarNavigation)
+        }
     }
 }
