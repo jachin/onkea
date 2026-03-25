@@ -3,9 +3,10 @@ import AppKit
 
 struct MarkdownEditorView: NSViewRepresentable {
     @Binding var text: String
+    let colorScheme: EditorColorScheme
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(text: $text)
+        Coordinator(text: $text, colorScheme: colorScheme)
     }
 
     func makeNSView(context: Context) -> NSScrollView {
@@ -40,10 +41,9 @@ struct MarkdownEditorView: NSViewRepresentable {
         textView.autoresizingMask = .width
         textView.textContainer?.widthTracksTextView = true
         textView.font = MarkdownHighlighter.baseFont
-        textView.backgroundColor = .textBackgroundColor
-        textView.insertionPointColor = .labelColor
+        MarkdownHighlighter.configureAppearance(of: textView, using: colorScheme)
 
-        context.coordinator.applyText(text, to: textView)
+        context.coordinator.applyText(text, to: textView, colorScheme: colorScheme)
         return scrollView
     }
 
@@ -52,8 +52,10 @@ struct MarkdownEditorView: NSViewRepresentable {
             return
         }
 
+        context.coordinator.updateColorScheme(colorScheme, for: textView)
+
         if textView.string != text {
-            context.coordinator.applyText(text, to: textView)
+            context.coordinator.applyText(text, to: textView, colorScheme: colorScheme)
         }
     }
 }
@@ -61,10 +63,12 @@ struct MarkdownEditorView: NSViewRepresentable {
 extension MarkdownEditorView {
     final class Coordinator: NSObject, NSTextViewDelegate {
         @Binding private var text: String
+        private var colorScheme: EditorColorScheme
         private var isApplyingText = false
 
-        init(text: Binding<String>) {
+        init(text: Binding<String>, colorScheme: EditorColorScheme) {
             _text = text
+            self.colorScheme = colorScheme
         }
 
         func textDidChange(_ notification: Notification) {
@@ -77,11 +81,22 @@ extension MarkdownEditorView {
             highlight(textView)
         }
 
-        func applyText(_ value: String, to textView: NSTextView) {
+        func applyText(_ value: String, to textView: NSTextView, colorScheme: EditorColorScheme) {
             isApplyingText = true
+            self.colorScheme = colorScheme
             textView.string = value
             highlight(textView)
             isApplyingText = false
+        }
+
+        func updateColorScheme(_ colorScheme: EditorColorScheme, for textView: NSTextView) {
+            guard self.colorScheme != colorScheme else {
+                return
+            }
+
+            self.colorScheme = colorScheme
+            MarkdownHighlighter.configureAppearance(of: textView, using: colorScheme)
+            highlight(textView)
         }
 
         private func highlight(_ textView: NSTextView) {
@@ -90,7 +105,7 @@ extension MarkdownEditorView {
             }
 
             let selectedRanges = textView.selectedRanges
-            MarkdownHighlighter.highlight(textStorage: textStorage)
+            MarkdownHighlighter.highlight(textStorage: textStorage, using: colorScheme)
             textView.selectedRanges = selectedRanges
         }
     }
@@ -99,42 +114,39 @@ extension MarkdownEditorView {
 enum MarkdownHighlighter {
     static let baseFont = NSFont.monospacedSystemFont(ofSize: NSFont.systemFontSize, weight: .regular)
 
-    private static let headingColor = NSColor.systemBlue
-    private static let codeColor = NSColor.systemOrange
-    private static let linkColor = NSColor.systemTeal
-    private static let strongColor = NSColor.systemPink
-    private static let emphasisColor = NSColor.systemPurple
-    private static let quoteColor = NSColor.systemGreen
-    private static let listColor = NSColor.secondaryLabelColor
-    private static let markerColor = NSColor.tertiaryLabelColor
-    private static let frontMatterKeyColor = NSColor.systemBlue
-    private static let frontMatterValueColor = NSColor.systemOrange
-    private static let frontMatterBooleanColor = NSColor.systemRed
-    private static let frontMatterDateColor = NSColor.systemBrown
-    private static let shortcodeColor = NSColor.systemIndigo
-    private static let templateActionColor = NSColor.systemCyan
-    private static let baseColor = NSColor.labelColor
+    static func configureAppearance(of textView: NSTextView, using colorScheme: EditorColorScheme) {
+        textView.backgroundColor = colorScheme.backgroundColor
+        textView.insertionPointColor = colorScheme.insertionPointColor
+    }
 
-    static func highlight(textStorage: NSTextStorage) {
+    static func highlight(textStorage: NSTextStorage, using colorScheme: EditorColorScheme) {
         let fullRange = NSRange(location: 0, length: textStorage.length)
         let baseAttributes: [NSAttributedString.Key: Any] = [
             .font: baseFont,
-            .foregroundColor: baseColor
+            .foregroundColor: colorScheme.textColor
         ]
 
         textStorage.beginEditing()
         textStorage.setAttributes(baseAttributes, range: fullRange)
-        applySemanticRuns(MarkdownSemanticParser.highlightRuns(for: textStorage.string), to: textStorage)
+        applySemanticRuns(
+            MarkdownSemanticParser.highlightRuns(for: textStorage.string),
+            to: textStorage,
+            colorScheme: colorScheme
+        )
         textStorage.endEditing()
     }
 
-    private static func applySemanticRuns(_ runs: [MarkdownSemanticRun], to textStorage: NSTextStorage) {
+    private static func applySemanticRuns(
+        _ runs: [MarkdownSemanticRun],
+        to textStorage: NSTextStorage,
+        colorScheme: EditorColorScheme
+    ) {
         guard !runs.isEmpty else {
             return
         }
 
         for segment in segmentedRuns(from: runs, textLength: textStorage.length) where segment.range.length > 0 {
-            textStorage.addAttributes(attributes(for: segment.roles), range: segment.range)
+            textStorage.addAttributes(attributes(for: segment.roles, colorScheme: colorScheme), range: segment.range)
         }
     }
 
@@ -173,10 +185,13 @@ enum MarkdownHighlighter {
         return segments
     }
 
-    private static func attributes(for roles: Set<MarkdownSemanticRole>) -> [NSAttributedString.Key: Any] {
+    private static func attributes(
+        for roles: Set<MarkdownSemanticRole>,
+        colorScheme: EditorColorScheme
+    ) -> [NSAttributedString.Key: Any] {
         [
             .font: font(for: roles),
-            .foregroundColor: color(for: roles)
+            .foregroundColor: color(for: roles, colorScheme: colorScheme)
         ]
     }
 
@@ -196,66 +211,69 @@ enum MarkdownHighlighter {
         return NSFontManager.shared.convert(base, toHaveTrait: .italicFontMask)
     }
 
-    private static func color(for roles: Set<MarkdownSemanticRole>) -> NSColor {
+    private static func color(
+        for roles: Set<MarkdownSemanticRole>,
+        colorScheme: EditorColorScheme
+    ) -> NSColor {
         if roles.contains(.syntaxMarker) {
-            return markerColor
+            return colorScheme.markerColor
         }
 
         if roles.contains(.shortcode) {
-            return shortcodeColor
+            return colorScheme.shortcodeColor
         }
 
         if roles.contains(.templateAction) {
-            return templateActionColor
+            return colorScheme.templateActionColor
         }
 
         if roles.contains(.frontMatterKey) {
-            return frontMatterKeyColor
+            return colorScheme.frontMatterKeyColor
         }
 
         if roles.contains(.frontMatterBoolean) {
-            return frontMatterBooleanColor
+            return colorScheme.frontMatterBooleanColor
         }
 
         if roles.contains(.frontMatterDate) {
-            return frontMatterDateColor
+            return colorScheme.frontMatterDateColor
         }
 
         if roles.contains(.frontMatterString) || roles.contains(.frontMatterNumber) {
-            return frontMatterValueColor
+            return colorScheme.frontMatterValueColor
         }
 
         if roles.contains(.code) {
-            return codeColor
+            return colorScheme.codeColor
         }
 
         if roles.contains(.link) || roles.contains(.linkDefinition) {
-            return linkColor
+            return colorScheme.linkColor
         }
 
         if roles.contains(.strong) {
-            return strongColor
+            return colorScheme.strongColor
         }
 
         if roles.contains(.emphasis) {
-            return emphasisColor
+            return colorScheme.emphasisColor
         }
 
         if roles.contains(.quote) {
-            return quoteColor
+            return colorScheme.quoteColor
         }
 
         if roles.contains(.list) || roles.contains(.thematicBreak) {
-            return listColor
+            return colorScheme.listColor
         }
 
         for role in roles {
             if headingLevelValue(from: role) != nil {
-                return headingColor
+                return colorScheme.headingColor
             }
         }
 
-        return baseColor
+        return colorScheme.textColor
     }
 
     private static func headingLevelValue(from role: MarkdownSemanticRole) -> Int? {

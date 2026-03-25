@@ -34,5 +34,10 @@ struct YouGoHugoApp: App {
         .commands {
             SidebarTabCommands(navigationModel: sidebarNavigation)
         }
+
+        Settings {
+            PreferencesView()
+        }
+        .modelContainer(sharedModelContainer)
     }
 }

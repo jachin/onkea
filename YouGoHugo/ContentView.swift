@@ -6,6 +6,7 @@ import OSLog
 struct ContentView: View {
     @EnvironmentObject private var sidebarNavigation: SidebarNavigationModel
 
+    @AppStorage(EditorColorScheme.appStorageKey) private var editorColorSchemeID = EditorColorScheme.defaultPreset.id
     @State private var showSidebar = true
     @State private var selectedPostID: String? = nil
     @State private var markdownText: String = ""
@@ -40,6 +41,10 @@ struct ContentView: View {
             []
         }
     }
+
+    private var editorColorScheme: EditorColorScheme {
+        EditorColorScheme.preset(withID: editorColorSchemeID)
+    }
     
     var body: some View {
         VStack(spacing: 0) {
@@ -71,7 +76,10 @@ struct ContentView: View {
                                 Spacer()
                             }
                             .padding(.top, 8)
-                            MarkdownEditorView(text: $markdownText)
+                            MarkdownEditorView(
+                                text: $markdownText,
+                                colorScheme: editorColorScheme
+                            )
                                 .padding([.leading, .trailing, .bottom], 8)
                         }
                         .frame(minWidth: 300, idealWidth: 400)
