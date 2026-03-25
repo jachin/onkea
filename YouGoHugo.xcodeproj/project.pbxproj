@@ -9,7 +9,6 @@
 /* Begin PBXBuildFile section */
 		185672292F6E3AE30097ED76 /* TOMLKit in Frameworks */ = {isa = PBXBuildFile; productRef = 185672282F6E3AE30097ED76 /* TOMLKit */; };
 		185672332F6E45F10097ED76 /* TOMLKit in Frameworks */ = {isa = PBXBuildFile; productRef = 185672322F6E45F10097ED76 /* TOMLKit */; };
-		185672342F6E46010097ED76 /* Markdown in Frameworks */ = {isa = PBXBuildFile; productRef = 185672362F6E46010097ED76 /* Markdown */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -58,7 +57,6 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				185672342F6E46010097ED76 /* Markdown in Frameworks */,
 				185672292F6E3AE30097ED76 /* TOMLKit in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -129,7 +127,6 @@
 			);
 			name = YouGoHugo;
 			packageProductDependencies = (
-				185672362F6E46010097ED76 /* Markdown */,
 				185672282F6E3AE30097ED76 /* TOMLKit */,
 			);
 			productName = YouGoHugo;
@@ -216,7 +213,6 @@
 			mainGroup = 185671F02F6E34DC0097ED76;
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
-				185672352F6E46010097ED76 /* XCRemoteSwiftPackageReference "swift-markdown" */,
 				185672272F6E3AE30097ED76 /* XCRemoteSwiftPackageReference "TOMLKit" */,
 			);
 			preferredProjectObjectVersion = 77;
@@ -595,14 +591,6 @@
 				minimumVersion = 0.6.0;
 			};
 		};
-		185672352F6E46010097ED76 /* XCRemoteSwiftPackageReference "swift-markdown" */ = {
-			isa = XCRemoteSwiftPackageReference;
-			repositoryURL = "https://github.com/swiftlang/swift-markdown";
-			requirement = {
-				kind = upToNextMajorVersion;
-				minimumVersion = 0.7.3;
-			};
-		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
@@ -615,11 +603,6 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 185672272F6E3AE30097ED76 /* XCRemoteSwiftPackageReference "TOMLKit" */;
 			productName = TOMLKit;
-		};
-		185672362F6E46010097ED76 /* Markdown */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = 185672352F6E46010097ED76 /* XCRemoteSwiftPackageReference "swift-markdown" */;
-			productName = Markdown;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

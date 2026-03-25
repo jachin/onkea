@@ -26,6 +26,12 @@ struct MarkdownEditorView: NSViewRepresentable {
         textView.isAutomaticQuoteSubstitutionEnabled = false
         textView.isAutomaticDashSubstitutionEnabled = false
         textView.isAutomaticTextReplacementEnabled = false
+        textView.isAutomaticSpellingCorrectionEnabled = false
+        textView.isAutomaticTextCompletionEnabled = false
+        textView.isContinuousSpellCheckingEnabled = false
+        textView.isGrammarCheckingEnabled = false
+        textView.isAutomaticLinkDetectionEnabled = false
+        textView.isAutomaticDataDetectionEnabled = false
         textView.textContainerInset = NSSize(width: 0, height: 8)
         textView.minSize = NSSize(width: 0, height: 0)
         textView.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
@@ -101,16 +107,13 @@ enum MarkdownHighlighter {
     private static let quoteColor = NSColor.systemGreen
     private static let listColor = NSColor.secondaryLabelColor
     private static let markerColor = NSColor.tertiaryLabelColor
+    private static let frontMatterKeyColor = NSColor.systemBlue
+    private static let frontMatterValueColor = NSColor.systemOrange
+    private static let frontMatterBooleanColor = NSColor.systemRed
+    private static let frontMatterDateColor = NSColor.systemBrown
+    private static let shortcodeColor = NSColor.systemIndigo
+    private static let templateActionColor = NSColor.systemCyan
     private static let baseColor = NSColor.labelColor
-
-    private static let headingFontSizes: [Int: CGFloat] = [
-        1: NSFont.systemFontSize + 5,
-        2: NSFont.systemFontSize + 4,
-        3: NSFont.systemFontSize + 3,
-        4: NSFont.systemFontSize + 2,
-        5: NSFont.systemFontSize + 1,
-        6: NSFont.systemFontSize + 1
-    ]
 
     static func highlight(textStorage: NSTextStorage) {
         let fullRange = NSRange(location: 0, length: textStorage.length)
@@ -178,27 +181,13 @@ enum MarkdownHighlighter {
     }
 
     private static func font(for roles: Set<MarkdownSemanticRole>) -> NSFont {
-        var headingLevel: Int?
-        for role in roles {
-            guard let candidateLevel = headingLevelValue(from: role) else {
-                continue
-            }
-
-            if let currentHeadingLevel = headingLevel {
-                headingLevel = min(currentHeadingLevel, candidateLevel)
-            } else {
-                headingLevel = candidateLevel
-            }
-        }
-
-        let pointSize = headingLevel.flatMap { headingFontSizes[$0] } ?? NSFont.systemFontSize
-
         if roles.contains(.code) {
-            return NSFont.monospacedSystemFont(ofSize: pointSize, weight: .regular)
+            return baseFont
         }
 
-        let weight: NSFont.Weight = roles.contains(.strong) ? .bold : (headingLevel == nil ? .regular : .semibold)
-        let base = NSFont.monospacedSystemFont(ofSize: pointSize, weight: weight)
+        let isHeading = roles.contains { headingLevelValue(from: $0) != nil }
+        let weight: NSFont.Weight = roles.contains(.strong) ? .bold : (isHeading ? .semibold : .regular)
+        let base = NSFont.monospacedSystemFont(ofSize: NSFont.systemFontSize, weight: weight)
 
         guard roles.contains(.emphasis) else {
             return base
@@ -212,11 +201,35 @@ enum MarkdownHighlighter {
             return markerColor
         }
 
+        if roles.contains(.shortcode) {
+            return shortcodeColor
+        }
+
+        if roles.contains(.templateAction) {
+            return templateActionColor
+        }
+
+        if roles.contains(.frontMatterKey) {
+            return frontMatterKeyColor
+        }
+
+        if roles.contains(.frontMatterBoolean) {
+            return frontMatterBooleanColor
+        }
+
+        if roles.contains(.frontMatterDate) {
+            return frontMatterDateColor
+        }
+
+        if roles.contains(.frontMatterString) || roles.contains(.frontMatterNumber) {
+            return frontMatterValueColor
+        }
+
         if roles.contains(.code) {
             return codeColor
         }
 
-        if roles.contains(.link) {
+        if roles.contains(.link) || roles.contains(.linkDefinition) {
             return linkColor
         }
 
