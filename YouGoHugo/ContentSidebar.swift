@@ -5,35 +5,30 @@ struct ContentSidebar: View {
     @Binding var isSiteOpen: Bool
     @Binding var selectedPostID: String?
     @Binding var selectedTab: SidebarTab
+    @Binding var sortOrder: ContentSortOrder
+    @Binding var postBrowseMode: PostBrowseMode
 
     let isLoading: Bool
     let errorMessage: String?
     let config: HugoConfig?
     let contentItems: [HugoContentItem]
+    let contentMetadataDatabase: HugoContentMetadataDatabase
     let contentErrorMessage: String?
     let hasUnsavedChanges: (String) -> Bool
     let openSite: () -> Void
     let createSite: () -> Void
 
+    @State private var expandedTagNames: Set<String> = []
+    @State private var expandedCategoryNames: Set<String> = []
+
     private let expandedSidebarMinWidth: CGFloat = 320
 
-    private var contentSections: [(section: String, items: [HugoContentItem])] {
-        let grouped = Dictionary(grouping: contentItems) { $0.sectionTitle }
+    private var tagGroups: [MetadataGroup] {
+        metadataGroups(for: \.tags)
+    }
 
-        return grouped
-            .map { section, items in
-                (
-                    section,
-                    items.sorted {
-                        let titleComparison = $0.displayTitle.localizedCaseInsensitiveCompare($1.displayTitle)
-                        if titleComparison == .orderedSame {
-                            return $0.path.localizedCaseInsensitiveCompare($1.path) == .orderedAscending
-                        }
-                        return titleComparison == .orderedAscending
-                    }
-                )
-            }
-            .sorted { $0.section.localizedCaseInsensitiveCompare($1.section) == .orderedAscending }
+    private var categoryGroups: [MetadataGroup] {
+        metadataGroups(for: \.categories)
     }
 
     var body: some View {
@@ -57,8 +52,10 @@ struct ContentSidebar: View {
                     closedSiteState
                 } else {
                     switch selectedTab {
-                    case .posts, .pages:
-                        openSiteState
+                    case .posts:
+                        postsState
+                    case .pages:
+                        pagesState
                     case .publishing, .siteSettings:
                         placeholderState
                     }
@@ -120,8 +117,11 @@ struct ContentSidebar: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
-    private var openSiteState: some View {
+    private var postsState: some View {
         VStack(alignment: .leading, spacing: 4) {
+            postsBrowseModePicker
+            sortOrderPicker
+
             if let contentErrorMessage {
                 Text(contentErrorMessage)
                     .font(.footnote)
@@ -129,20 +129,140 @@ struct ContentSidebar: View {
                     .padding(.horizontal)
             }
 
-            List(selection: $selectedPostID) {
-                ForEach(contentSections, id: \.section) { section in
-                    Section(section.section) {
-                        ForEach(section.items) { item in
-                            ContentSidebarRow(
-                                item: item,
-                                hasUnsavedChanges: hasUnsavedChanges(item.id)
-                            )
-                            .tag(item.id as String?)
+            postsList
+        }
+        .onChange(of: postBrowseMode) { _, newValue in
+            expandInitialGroupsIfNeeded(for: newValue)
+        }
+        .onAppear {
+            expandInitialGroupsIfNeeded(for: postBrowseMode)
+        }
+    }
+
+    private var pagesState: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            sortOrderPicker
+
+            if let contentErrorMessage {
+                Text(contentErrorMessage)
+                    .font(.footnote)
+                    .foregroundStyle(.red)
+                    .padding(.horizontal)
+            }
+
+            flatList(items: contentItems)
+        }
+    }
+
+    private var postsBrowseModePicker: some View {
+        HStack(spacing: 4) {
+            ForEach(PostBrowseMode.allCases) { mode in
+                Button {
+                    postBrowseMode = mode
+                } label: {
+                    Label(mode.title, systemImage: mode.systemImage)
+                        .font(.caption)
+                        .frame(maxWidth: .infinity, minHeight: 28)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(postBrowseMode == mode ? .primary : .secondary)
+                .background {
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .fill(postBrowseMode == mode ? Color.primary.opacity(0.12) : .clear)
+                }
+            }
+        }
+        .padding(4)
+        .padding(.horizontal)
+        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .padding(.horizontal)
+    }
+
+    private var sortOrderPicker: some View {
+        Picker("Order", selection: $sortOrder) {
+            ForEach(ContentSortOrder.allCases) { order in
+                Text(order.title).tag(order)
+            }
+        }
+        .pickerStyle(.menu)
+        .padding(.horizontal)
+        .padding(.bottom, 4)
+    }
+
+    @ViewBuilder
+    private var postsList: some View {
+        switch postBrowseMode {
+        case .date:
+            flatList(items: contentItems)
+        case .tags:
+            groupedList(
+                groups: tagGroups,
+                expandedNames: $expandedTagNames,
+                emptyTitle: "No Tags Found",
+                emptyDescription: "Add tags in front matter to group posts here."
+            )
+        case .categories:
+            groupedList(
+                groups: categoryGroups,
+                expandedNames: $expandedCategoryNames,
+                emptyTitle: "No Categories Found",
+                emptyDescription: "Add categories in front matter to group posts here."
+            )
+        }
+    }
+
+    private func flatList(items: [HugoContentItem]) -> some View {
+        List(selection: $selectedPostID) {
+            ForEach(items) { item in
+                ContentSidebarRow(
+                    item: item,
+                    hasUnsavedChanges: hasUnsavedChanges(item.id)
+                )
+                .tag(item.id as String?)
+            }
+        }
+        .listStyle(.inset)
+    }
+
+    private func groupedList(
+        groups: [MetadataGroup],
+        expandedNames: Binding<Set<String>>,
+        emptyTitle: String,
+        emptyDescription: String
+    ) -> some View {
+        Group {
+            if groups.isEmpty {
+                ContentUnavailableView(
+                    emptyTitle,
+                    systemImage: "folder.badge.questionmark",
+                    description: Text(emptyDescription)
+                )
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                List(selection: $selectedPostID) {
+                    ForEach(groups) { group in
+                        DisclosureGroup(
+                            isExpanded: disclosureBinding(for: group.name, expandedNames: expandedNames)
+                        ) {
+                            ForEach(group.items) { item in
+                                ContentSidebarRow(
+                                    item: item,
+                                    hasUnsavedChanges: hasUnsavedChanges(item.id)
+                                )
+                                .tag(item.id as String?)
+                            }
+                        } label: {
+                            Label {
+                                Text(group.name)
+                            } icon: {
+                                Image(systemName: "folder")
+                            }
                         }
                     }
                 }
+                .listStyle(.inset)
             }
-            .listStyle(.inset)
         }
     }
 
@@ -158,6 +278,78 @@ struct ContentSidebar: View {
     private var collapsedSidebar: some View {
         EmptyView()
     }
+
+    private func disclosureBinding(
+        for name: String,
+        expandedNames: Binding<Set<String>>
+    ) -> Binding<Bool> {
+        Binding(
+            get: {
+                expandedNames.wrappedValue.contains(name)
+            },
+            set: { isExpanded in
+                if isExpanded {
+                    expandedNames.wrappedValue.insert(name)
+                } else {
+                    expandedNames.wrappedValue.remove(name)
+                }
+            }
+        )
+    }
+
+    private func metadataGroups(
+        for keyPath: KeyPath<HugoContentMetadata, [String]>
+    ) -> [MetadataGroup] {
+        var groupedItems: [String: [HugoContentItem]] = [:]
+        var displayNamesByNormalizedName: [String: String] = [:]
+
+        for item in contentItems {
+            guard let metadata = contentMetadataDatabase.metadata(for: item.id) else {
+                continue
+            }
+
+            for value in metadata[keyPath: keyPath] {
+                let normalizedValue = value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+                guard !normalizedValue.isEmpty else {
+                    continue
+                }
+
+                groupedItems[normalizedValue, default: []].append(item)
+                displayNamesByNormalizedName[normalizedValue] = displayNamesByNormalizedName[normalizedValue] ?? value
+            }
+        }
+
+        return groupedItems.keys.sorted().compactMap { normalizedName in
+            guard let items = groupedItems[normalizedName],
+                  let displayName = displayNamesByNormalizedName[normalizedName] else {
+                return nil
+            }
+
+            return MetadataGroup(name: displayName, items: items)
+        }
+    }
+
+    private func expandInitialGroupsIfNeeded(for mode: PostBrowseMode) {
+        switch mode {
+        case .date:
+            break
+        case .tags:
+            if expandedTagNames.isEmpty {
+                expandedTagNames = Set(tagGroups.prefix(3).map(\.name))
+            }
+        case .categories:
+            if expandedCategoryNames.isEmpty {
+                expandedCategoryNames = Set(categoryGroups.prefix(3).map(\.name))
+            }
+        }
+    }
+}
+
+private struct MetadataGroup: Identifiable {
+    let name: String
+    let items: [HugoContentItem]
+
+    var id: String { name }
 }
 
 private struct ContentSidebarRow: View {

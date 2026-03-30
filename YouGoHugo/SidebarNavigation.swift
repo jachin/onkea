@@ -49,6 +49,52 @@ enum SidebarTab: Int, CaseIterable, Identifiable {
     }
 }
 
+enum ContentSortOrder: String, CaseIterable, Identifiable {
+    case publishDateDescending
+    case publishDateAscending
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .publishDateDescending:
+            "Published Date (Newest First)"
+        case .publishDateAscending:
+            "Published Date (Oldest First)"
+        }
+    }
+}
+
+enum PostBrowseMode: String, CaseIterable, Identifiable {
+    case date
+    case tags
+    case categories
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .date:
+            "Date"
+        case .tags:
+            "Tags"
+        case .categories:
+            "Category"
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .date:
+            "calendar"
+        case .tags:
+            "tag"
+        case .categories:
+            "folder"
+        }
+    }
+}
+
 @MainActor
 final class SidebarNavigationModel: ObservableObject {
     @Published var isSiteOpen = false

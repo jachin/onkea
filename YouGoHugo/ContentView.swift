@@ -19,16 +19,19 @@ struct ContentView: View {
     @State private var previewURL: URL? = nil
     @State private var config: HugoConfig? = nil
     @State private var contentItems: [HugoContentItem] = []
+    @State private var contentMetadataDatabase = HugoContentMetadataDatabase()
     @State private var contentErrorMessage: String? = nil
     @State private var hugoServerStatus = HugoServerStatus(phase: .stopped, message: "No server running", serverURL: nil)
     @State private var savedContentByID: [String: String] = [:]
     @State private var draftContentByID: [String: String] = [:]
     @State private var isSaving = false
+    @State private var contentSortOrder: ContentSortOrder = .publishDateDescending
+    @State private var postBrowseMode: PostBrowseMode = .date
 
     @State private var hugoStatus: HugoStatus = .checking
 
     private var filteredContentItems: [HugoContentItem] {
-        switch sidebarNavigation.selectedTab {
+        let tabFilteredItems: [HugoContentItem] = switch sidebarNavigation.selectedTab {
         case .posts:
             contentItems.filter { item in
                 item.section.localizedCaseInsensitiveCompare("posts") == .orderedSame
@@ -40,6 +43,8 @@ struct ContentView: View {
         case .publishing, .siteSettings:
             []
         }
+
+        return tabFilteredItems.sorted(by: compareContentItems)
     }
 
     private var editorColorScheme: EditorColorScheme {
@@ -54,10 +59,13 @@ struct ContentView: View {
                     isSiteOpen: $siteIsOpen,
                     selectedPostID: $selectedPostID,
                     selectedTab: $sidebarNavigation.selectedTab,
+                    sortOrder: $contentSortOrder,
+                    postBrowseMode: $postBrowseMode,
                     isLoading: isLoading,
                     errorMessage: errorMessage,
                     config: config,
                     contentItems: filteredContentItems,
+                    contentMetadataDatabase: contentMetadataDatabase,
                     contentErrorMessage: contentErrorMessage,
                     hasUnsavedChanges: hasUnsavedChanges(for:),
                     openSite: openSite,
@@ -66,76 +74,46 @@ struct ContentView: View {
                 if showSidebar {
                     Divider()
                 }
-                // Main 2-pane editor
-                ZStack {
-                    HStack(spacing: 0) {
-                        VStack(alignment: .leading) {
-                            HStack {
-                                Text("Markdown Editor")
-                                    .font(.caption)
-                                Spacer()
-                            }
-                            .padding(.top, 8)
-                            MarkdownEditorView(
-                                text: $markdownText,
-                                colorScheme: editorColorScheme
-                            )
-                                .padding([.leading, .trailing, .bottom], 8)
-                        }
-                        .frame(minWidth: 300, idealWidth: 400)
-                        Divider()
-                        VStack(alignment: .leading) {
-                            Text("Preview")
-                                .font(.caption)
-                                .padding(.top, 8)
-                            Group {
-                                if let previewURL {
-                                    WebView(url: previewURL)
-                                } else {
-                                    ContentUnavailableView(
-                                        "Preview Unavailable",
-                                        systemImage: "network.slash",
-                                        description: Text(hugoServerStatus.message)
-                                    )
+                Group {
+                    if siteIsOpen {
+                        HStack(spacing: 0) {
+                            VStack(alignment: .leading) {
+                                HStack {
+                                    Text("Markdown Editor")
+                                        .font(.caption)
+                                    Spacer()
                                 }
+                                .padding(.top, 8)
+                                MarkdownEditorView(
+                                    text: $markdownText,
+                                    colorScheme: editorColorScheme
+                                )
+                                    .padding([.leading, .trailing, .bottom], 8)
                             }
-                            .padding([.leading, .trailing, .bottom], 8)
-                        }
-                    }
-                    .frame(maxWidth: .infinity)
-                    .disabled(!siteIsOpen || hugoStatus != .compatible)
-
-                    if !siteIsOpen {
-                        Rectangle()
-                            .fill(.thinMaterial)
-                            .opacity(0.80)
-                            .ignoresSafeArea()
-
-                        if isLoading {
-                            ProgressView("Loading site...")
-                                .font(.title3)
-                                .foregroundStyle(.secondary)
-                        } else if let error = errorMessage {
-                            VStack(spacing: 16) {
-                                Image(systemName: "exclamationmark.triangle.fill")
-                                    .font(.system(size: 40))
-                                    .foregroundColor(.red)
-                                Text(error)
-                                    .font(.title3)
-                                    .foregroundColor(.red)
-                                    .multilineTextAlignment(.center)
-                                    .padding(.horizontal)
-                            }
-                        } else {
-                            VStack(spacing: 16) {
-                                Image(systemName: "folder.badge.questionmark")
-                                    .font(.system(size: 40))
-                                    .foregroundStyle(.secondary)
-                                Text("Open or create a site to start editing")
-                                    .font(.title3)
-                                    .foregroundStyle(.secondary)
+                            .frame(minWidth: 300, idealWidth: 400)
+                            Divider()
+                            VStack(alignment: .leading) {
+                                Text("Preview")
+                                    .font(.caption)
+                                    .padding(.top, 8)
+                                Group {
+                                    if let previewURL {
+                                        WebView(url: previewURL)
+                                    } else {
+                                        ContentUnavailableView(
+                                            "Preview Unavailable",
+                                            systemImage: "network.slash",
+                                            description: Text(hugoServerStatus.message)
+                                        )
+                                    }
+                                }
+                                .padding([.leading, .trailing, .bottom], 8)
                             }
                         }
+                        .frame(maxWidth: .infinity)
+                        .disabled(hugoStatus != .compatible)
+                    } else {
+                        initialWorkspaceState
                     }
                 }
             }
@@ -187,6 +165,7 @@ struct ContentView: View {
             sidebarNavigation.isSiteOpen = newValue
             if !newValue {
                 sidebarNavigation.selectedTab = .posts
+                postBrowseMode = .date
             }
         }
         .onChange(of: sidebarNavigation.selectedTab) { _, _ in
@@ -331,6 +310,10 @@ struct ContentView: View {
                     do {
                         let configResult = try await loadHugoConfigAsync(from: url)
                         let loadedContentItems = try await loadHugoContentListAsync(from: url)
+                        let metadataDatabase = try await loadHugoContentMetadataDatabaseAsync(
+                            from: url,
+                            items: loadedContentItems
+                        )
                         let serverProcess: Process?
 
                         if loadedContentItems.isEmpty {
@@ -355,6 +338,7 @@ struct ContentView: View {
                             stopHugoServer(hugoServerProcess)
                             config = configResult
                             contentItems = loadedContentItems
+                            contentMetadataDatabase = metadataDatabase
                             siteURL = url
                             hugoServerProcess = serverProcess
                             previewURL = previewURLForSelectedPost(using: hugoServerStatus.serverURL)
@@ -377,6 +361,7 @@ struct ContentView: View {
                             isLoading = false
                             config = nil
                             contentItems = []
+                            contentMetadataDatabase = HugoContentMetadataDatabase()
                             selectedPostID = nil
                             siteURL = nil
                             siteIsOpen = false
@@ -423,8 +408,65 @@ struct ContentView: View {
         .background(.bar)
     }
 
+    private var initialWorkspaceState: some View {
+        Group {
+            if isLoading {
+                ProgressView("Loading site...")
+                    .font(.title3)
+                    .foregroundStyle(.secondary)
+            } else if let errorMessage {
+                VStack(spacing: 16) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.system(size: 40))
+                        .foregroundColor(.red)
+                    Text(errorMessage)
+                        .font(.title3)
+                        .foregroundColor(.red)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal)
+                }
+            } else {
+                ContentUnavailableView(
+                    "Open or create a site to start editing",
+                    systemImage: "folder.badge.questionmark"
+                )
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
     private func updatePreviewURL(for item: HugoContentItem) {
         previewURL = previewURL(for: item, serverURL: hugoServerStatus.serverURL)
+    }
+
+    private func compareContentItems(_ lhs: HugoContentItem, _ rhs: HugoContentItem) -> Bool {
+        let lhsDate = contentMetadataDatabase.metadata(for: lhs.id)?.publishDate
+        let rhsDate = contentMetadataDatabase.metadata(for: rhs.id)?.publishDate
+
+        if lhsDate != rhsDate {
+            switch (lhsDate, rhsDate) {
+            case let (lhsDate?, rhsDate?):
+                switch contentSortOrder {
+                case .publishDateDescending:
+                    return lhsDate > rhsDate
+                case .publishDateAscending:
+                    return lhsDate < rhsDate
+                }
+            case (.some, nil):
+                return true
+            case (nil, .some):
+                return false
+            case (nil, nil):
+                break
+            }
+        }
+
+        let titleComparison = lhs.displayTitle.localizedCaseInsensitiveCompare(rhs.displayTitle)
+        if titleComparison != .orderedSame {
+            return titleComparison == .orderedAscending
+        }
+
+        return lhs.path.localizedCaseInsensitiveCompare(rhs.path) == .orderedAscending
     }
 
     private func previewURLForSelectedPost(using serverURL: URL?) -> URL? {
