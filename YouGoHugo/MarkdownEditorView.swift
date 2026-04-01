@@ -247,6 +247,10 @@ enum MarkdownHighlighter {
             return colorScheme.codeColor
         }
 
+        if roles.contains(.linkDestination) {
+            return colorScheme.linkDestinationColor
+        }
+
         if roles.contains(.link) || roles.contains(.linkDefinition) {
             return colorScheme.linkColor
         }

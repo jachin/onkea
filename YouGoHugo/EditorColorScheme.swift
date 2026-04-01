@@ -10,6 +10,7 @@ struct EditorColorScheme: Identifiable, Equatable {
     let headingColor: NSColor
     let codeColor: NSColor
     let linkColor: NSColor
+    let linkDestinationColor: NSColor
     let strongColor: NSColor
     let emphasisColor: NSColor
     let quoteColor: NSColor
@@ -44,6 +45,7 @@ struct EditorColorScheme: Identifiable, Equatable {
         headingColor: .hex(0x0E7490),
         codeColor: .hex(0xB45309),
         linkColor: .hex(0x0F766E),
+        linkDestinationColor: .hex(0x7C3AED),
         strongColor: .hex(0xBE185D),
         emphasisColor: .hex(0x7C3AED),
         quoteColor: .hex(0x3F6212),
@@ -67,6 +69,7 @@ struct EditorColorScheme: Identifiable, Equatable {
         headingColor: .hex(0xC2410C),
         codeColor: .hex(0x7C2D12),
         linkColor: .hex(0x9D174D),
+        linkDestinationColor: .hex(0x7E22CE),
         strongColor: .hex(0xBE123C),
         emphasisColor: .hex(0x7E22CE),
         quoteColor: .hex(0x166534),
@@ -90,6 +93,7 @@ struct EditorColorScheme: Identifiable, Equatable {
         headingColor: .hex(0x0369A1),
         codeColor: .hex(0xB45309),
         linkColor: .hex(0x0F766E),
+        linkDestinationColor: .hex(0x1D4ED8),
         strongColor: .hex(0xBE185D),
         emphasisColor: .hex(0x6D28D9),
         quoteColor: .hex(0x166534),
@@ -113,6 +117,7 @@ struct EditorColorScheme: Identifiable, Equatable {
         headingColor: .hex(0x60A5FA),
         codeColor: .hex(0xFB923C),
         linkColor: .hex(0x22D3EE),
+        linkDestinationColor: .hex(0xA78BFA),
         strongColor: .hex(0xF472B6),
         emphasisColor: .hex(0xC084FC),
         quoteColor: .hex(0x4ADE80),
@@ -136,6 +141,7 @@ struct EditorColorScheme: Identifiable, Equatable {
         headingColor: .hex(0xFB923C),
         codeColor: .hex(0xF59E0B),
         linkColor: .hex(0x2DD4BF),
+        linkDestinationColor: .hex(0xFACC15),
         strongColor: .hex(0xFB7185),
         emphasisColor: .hex(0xC084FC),
         quoteColor: .hex(0x86EFAC),

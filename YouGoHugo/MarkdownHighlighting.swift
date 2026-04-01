@@ -6,6 +6,7 @@ enum MarkdownSemanticRole: Hashable {
     case emphasis
     case code
     case link
+    case linkDestination
     case quote
     case list
     case thematicBreak
@@ -353,11 +354,29 @@ enum MarkdownSemanticParser {
                 continue
             }
 
-            let protectedSpans = parseProtectedSpans(in: source, range: contentRange, collector: &collector)
             let block = parseBlockContext(in: source, lineRange: contentRange, collector: &collector)
+
+            if block == nil,
+               let paragraphRange = paragraphInlineRange(
+                in: source,
+                from: cursor,
+                upperBound: range.upperBound
+               ) {
+                let protectedSpans = parseProtectedSpans(in: source, range: paragraphRange, collector: &collector)
+                parseInlineMarkdown(
+                    in: source,
+                    range: paragraphRange,
+                    linkDefinitions: linkDefinitions,
+                    protectedSpans: protectedSpans,
+                    collector: &collector
+                )
+                cursor = paragraphRange.upperBound
+                continue
+            }
 
             let inlineStart = block?.contentStart ?? contentRange.lowerBound
             if inlineStart < contentRange.upperBound {
+                let protectedSpans = parseProtectedSpans(in: source, range: contentRange, collector: &collector)
                 parseInlineMarkdown(
                     in: source,
                     range: inlineStart..<contentRange.upperBound,
@@ -369,6 +388,53 @@ enum MarkdownSemanticParser {
 
             cursor = currentLineRange.upperBound
         }
+    }
+
+    private static func paragraphInlineRange(
+        in source: String,
+        from start: String.Index,
+        upperBound: String.Index
+    ) -> Range<String.Index>? {
+        var cursor = start
+        var paragraphStart: String.Index?
+        var paragraphEnd = start
+
+        while cursor < upperBound {
+            let currentLineRange = lineRange(in: source, startingAt: cursor, upperBound: upperBound)
+            let contentRange = trimmedLineExcludingNewline(for: currentLineRange, in: source)
+
+            if contentRange.isEmpty {
+                break
+            }
+
+            if openingFence(in: source, lineRange: contentRange) != nil ||
+                isThematicBreakLine(in: source, lineRange: contentRange) ||
+                parseLinkDefinitionComponents(in: source, lineRange: contentRange) != nil ||
+                isBlockContextLine(in: source, lineRange: contentRange) {
+                break
+            }
+
+            if paragraphStart == nil {
+                paragraphStart = contentRange.lowerBound
+            }
+
+            paragraphEnd = contentRange.upperBound
+            cursor = currentLineRange.upperBound
+        }
+
+        guard let paragraphStart else {
+            return nil
+        }
+
+        return paragraphStart..<paragraphEnd
+    }
+
+    private static func isBlockContextLine(
+        in source: String,
+        lineRange: Range<String.Index>
+    ) -> Bool {
+        var probeCollector = HighlightCollector(source: source)
+        return parseBlockContext(in: source, lineRange: lineRange, collector: &probeCollector) != nil
     }
 
     private static func parseProtectedSpans(
@@ -544,6 +610,9 @@ enum MarkdownSemanticParser {
 
             if character == "[", let linkSpan = parseLink(in: source, from: cursor, upperBound: range.upperBound) {
                 collector.add(linkSpan.textRange, role: .link)
+                if let destinationRange = linkSpan.destinationRange {
+                    collector.add(destinationRange, role: .linkDestination)
+                }
                 cursor = linkSpan.fullRange.upperBound
                 continue
             }
@@ -555,6 +624,9 @@ enum MarkdownSemanticParser {
                 linkDefinitions: linkDefinitions
             ) {
                 collector.add(referenceLinkSpan.textRange, role: .link)
+                if let destinationRange = referenceLinkSpan.destinationRange {
+                    collector.add(destinationRange, role: .linkDestination)
+                }
                 cursor = referenceLinkSpan.fullRange.upperBound
                 continue
             }
@@ -619,7 +691,8 @@ enum MarkdownSemanticParser {
 
         return LinkSpan(
             fullRange: start..<source.index(after: destinationEnd),
-            textRange: textStart..<textEnd
+            textRange: start..<afterTextEnd,
+            destinationRange: afterTextEnd..<source.index(after: destinationEnd)
         )
     }
 
@@ -657,7 +730,8 @@ enum MarkdownSemanticParser {
 
             return LinkSpan(
                 fullRange: start..<source.index(after: labelEnd),
-                textRange: textStart..<textEnd
+                textRange: start..<afterTextEnd,
+                destinationRange: afterTextEnd..<source.index(after: labelEnd)
             )
         }
 
@@ -673,7 +747,8 @@ enum MarkdownSemanticParser {
 
         return LinkSpan(
             fullRange: start..<afterTextEnd,
-            textRange: textStart..<textEnd
+            textRange: start..<afterTextEnd,
+            destinationRange: nil
         )
     }
 
@@ -1204,6 +1279,7 @@ private struct DelimitedSpan {
 private struct LinkSpan {
     let fullRange: Range<String.Index>
     let textRange: Range<String.Index>
+    let destinationRange: Range<String.Index>?
 }
 
 private struct LinkDefinitionComponents {
