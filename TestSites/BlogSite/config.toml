@@ -1,0 +1,24 @@
+baseURL = "https://blog.oneka.local/"
+languageCode = "en-us"
+title = "Blog Site"
+enableRobotsTXT = true
+canonifyURLs = false
+
+[author]
+name = "Oneka QA"
+
+[params]
+subtitle = "A personal blog for testing post-heavy content workflows"
+
+[taxonomies]
+tag = "tags"
+category = "categories"
+author = "authors"
+
+[permalinks]
+posts = "/posts/:year/:month/:slug/"
+
+[markup]
+  [markup.goldmark]
+    [markup.goldmark.renderer]
+      unsafe = true

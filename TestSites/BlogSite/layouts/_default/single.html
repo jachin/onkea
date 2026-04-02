@@ -1,0 +1,9 @@
+{{ define "main" }}
+<article>
+    <h2>{{ .Title }}</h2>
+    <p><small>{{ .Date.Format "January 2, 2006" }}</small></p>
+    {{ with .Params.tags }}<p>Tags: {{ range . }}<a href="/tags/{{ . | urlize }}">{{ . }}</a> {{ end }}</p>{{ end }}
+    {{ with .Params.categories }}<p>Categories: {{ range . }}<a href="/categories/{{ . | urlize }}">{{ . }}</a> {{ end }}</p>{{ end }}
+    {{ .Content }}
+</article>
+{{ end }}

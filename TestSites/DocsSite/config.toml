@@ -1,0 +1,28 @@
+baseURL = "https://docs.oneka.local/"
+languageCode = "en-us"
+title = "Docs Site"
+enableRobotsTXT = true
+canonifyURLs = false
+
+[author]
+name = "Oneka QA"
+
+[params]
+subtitle = "A documentation site for testing structured technical content"
+
+[taxonomies]
+tag = "tags"
+section = "sections"
+
+[permalinks]
+guides = "/guides/:slug/"
+reference = "/reference/:slug/"
+tutorials = "/tutorials/:slug/"
+
+[markup]
+  [markup.goldmark]
+    [markup.goldmark.renderer]
+      unsafe = true
+  [markup.highlight]
+    style = "monokai"
+    lineNos = true
