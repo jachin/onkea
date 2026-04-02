@@ -15,6 +15,7 @@ struct ContentView: View {
     @AppStorage(Self.sidebarWidthStorageKey) private var storedSidebarWidth = 340.0
     @AppStorage(Self.editorWidthStorageKey) private var storedEditorWidth = 400.0
     @State private var showSidebar = true
+    @State private var showPreview = true
     @State private var selectedPostID: String? = nil
     @State private var markdownText: String = ""
     @State private var siteIsOpen = false
@@ -44,7 +45,8 @@ struct ContentView: View {
     @State private var pendingEditorWidth: CGFloat = 400
     @State private var sidebarDragStartWidth: CGFloat?
     @State private var editorDragStartWidths: EditorDragStart?
-    @State private var paneResizeTask: Task<Void, Never>?
+    @State private var hoveredDivider: PaneDividerKind?
+    @State private var activeDivider: PaneDividerKind?
 
     private var filteredContentItems: [HugoContentItem] {
         let tabFilteredItems: [HugoContentItem] = switch sidebarNavigation.selectedTab {
@@ -102,6 +104,7 @@ struct ContentView: View {
             serverStatusBar
         }
         .animation(.default, value: showSidebar)
+        .animation(.default, value: showPreview)
         .navigationTitle(windowTitle)
         .toolbar {
             ToolbarItem(placement: .navigation) {
@@ -132,6 +135,15 @@ struct ContentView: View {
                 .keyboardShortcut("s", modifiers: [.command, .option])
                 .disabled(!canSaveAnyPosts)
             }
+
+            ToolbarItem(placement: .primaryAction) {
+                Button {
+                    showPreview.toggle()
+                } label: {
+                    Image(systemName: showPreview ? "sidebar.right" : "sidebar.left")
+                }
+                .help(showPreview ? "Hide Preview" : "Show Preview")
+            }
         }
         .onAppear {
             sidebarNavigation.isSiteOpen = siteIsOpen
@@ -145,7 +157,6 @@ struct ContentView: View {
             hugoServerProcess = nil
             previewURL = nil
             hugoServerStatus = HugoServerStatus(phase: .stopped, message: "No server running", serverURL: nil)
-            paneResizeTask?.cancel()
             commitPaneWidths()
         }
         .onChange(of: siteIsOpen) { _, newValue in
@@ -289,37 +300,46 @@ struct ContentView: View {
     private func resizableWorkspace(totalWidth: CGFloat) -> some View {
         let metrics = layoutMetrics(for: totalWidth)
 
-        HStack(spacing: 0) {
-            if showSidebar {
-                sidebarPane
-                    .frame(width: metrics.sidebarWidth)
+        ZStack(alignment: .topLeading) {
+            HStack(spacing: 0) {
+                if showSidebar {
+                    sidebarPane
+                        .frame(width: metrics.sidebarWidth)
 
-                paneDivider(cursor: .resizeLeftRight) { value in
-                    updateSidebarWidth(with: value.translation.width, totalWidth: totalWidth)
-                } onEnded: {
-                    sidebarDragStartWidth = nil
-                    commitPaneWidths()
+                    paneDivider(.sidebar, cursor: .resizeLeftRight) { value in
+                        updateSidebarWidth(with: value.translation.width, totalWidth: totalWidth)
+                    } onEnded: {
+                        sidebarDragStartWidth = nil
+                        activeDivider = nil
+                        commitPaneWidths()
+                    }
+                }
+
+                Group {
+                    if selectedContentItem != nil {
+                        editorPane
+                    } else {
+                        editorPlaceholderPane
+                    }
+                }
+                .frame(width: showPreview ? metrics.editorWidth : nil)
+                .frame(maxWidth: showPreview ? nil : .infinity)
+
+                if showPreview {
+                    paneDivider(.editor, cursor: .resizeLeftRight) { value in
+                        updateEditorWidth(with: value.translation.width, totalWidth: totalWidth)
+                    } onEnded: {
+                        editorDragStartWidths = nil
+                        activeDivider = nil
+                        commitPaneWidths()
+                    }
+
+                    previewPane
+                        .frame(minWidth: previewMinimumWidth, maxWidth: .infinity)
                 }
             }
 
-            Group {
-                if selectedContentItem != nil {
-                    editorPane
-                } else {
-                    editorPlaceholderPane
-                }
-            }
-            .frame(width: metrics.editorWidth)
-
-            paneDivider(cursor: .resizeLeftRight) { value in
-                updateEditorWidth(with: value.translation.width, totalWidth: totalWidth)
-            } onEnded: {
-                editorDragStartWidths = nil
-                commitPaneWidths()
-            }
-
-            previewPane
-                .frame(minWidth: previewMinimumWidth, maxWidth: .infinity)
+            paneDividerFeedbackOverlay(totalWidth: totalWidth, metrics: metrics)
         }
     }
 
@@ -380,21 +400,57 @@ struct ContentView: View {
         }
     }
 
+    @ViewBuilder
+    private func paneDividerFeedbackOverlay(totalWidth: CGFloat, metrics: LayoutMetrics) -> some View {
+        if let feedback = dividerFeedback(for: totalWidth, metrics: metrics) {
+            ZStack(alignment: .topLeading) {
+                paneGuide(at: feedback.minimumX, emphasized: false)
+                paneGuide(at: feedback.maximumX, emphasized: false)
+
+                if let currentX = feedback.currentX {
+                    paneGuide(at: currentX, emphasized: true)
+                }
+            }
+            .allowsHitTesting(false)
+            .transition(.opacity)
+        }
+    }
+
+    private func paneGuide(at x: CGFloat, emphasized: Bool) -> some View {
+        GeometryReader { proxy in
+            Path { path in
+                path.move(to: CGPoint(x: x, y: 0))
+                path.addLine(to: CGPoint(x: x, y: proxy.size.height))
+            }
+            .stroke(
+                emphasized ? Color.accentColor.opacity(0.75) : Color.secondary.opacity(0.3),
+                style: StrokeStyle(lineWidth: emphasized ? 2 : 1, dash: emphasized ? [] : [5, 5])
+            )
+        }
+    }
+
     private func paneDivider(
+        _ kind: PaneDividerKind,
         cursor: NSCursor,
         onChanged: @escaping (DragGesture.Value) -> Void,
         onEnded: @escaping () -> Void
     ) -> some View {
         Rectangle()
-            .fill(.clear)
+            .fill(dividerFill(for: kind))
             .frame(width: dividerWidth)
             .overlay {
                 Rectangle()
-                    .fill(Color.primary.opacity(0.12))
-                    .frame(width: 1)
+                    .fill(dividerStroke(for: kind))
+                    .frame(width: isDividerHighlighted(kind) ? 2 : 1)
             }
             .contentShape(Rectangle())
             .onHover { isHovering in
+                if isHovering {
+                    hoveredDivider = kind
+                } else if hoveredDivider == kind {
+                    hoveredDivider = nil
+                }
+
                 if isHovering {
                     cursor.push()
                 } else {
@@ -403,11 +459,26 @@ struct ContentView: View {
             }
             .gesture(
                 DragGesture(minimumDistance: 0)
-                    .onChanged(onChanged)
+                    .onChanged { value in
+                        activeDivider = kind
+                        onChanged(value)
+                    }
                     .onEnded { _ in
                         onEnded()
                     }
             )
+    }
+
+    private func dividerFill(for kind: PaneDividerKind) -> Color {
+        isDividerHighlighted(kind) ? Color.accentColor.opacity(0.12) : .clear
+    }
+
+    private func dividerStroke(for kind: PaneDividerKind) -> Color {
+        isDividerHighlighted(kind) ? Color.accentColor.opacity(0.55) : Color.primary.opacity(0.12)
+    }
+
+    private func isDividerHighlighted(_ kind: PaneDividerKind) -> Bool {
+        activeDivider == kind || hoveredDivider == kind
     }
     
     private func openSite() {
@@ -617,6 +688,14 @@ struct ContentView: View {
     }
 
     private func layoutMetrics(for totalWidth: CGFloat) -> LayoutMetrics {
+        guard showPreview else {
+            let sidebarWidth = showSidebar
+                ? min(max(self.sidebarWidth, sidebarMinimumWidth), maxSidebarWidth(for: totalWidth))
+                : 0
+
+            return LayoutMetrics(sidebarWidth: sidebarWidth, editorWidth: totalWidth - sidebarWidth)
+        }
+
         let visibleSidebarWidth = showSidebar ? sidebarWidth : 0
         let availableWithoutPreview = totalWidth - previewMinimumWidth - dividerWidth
         let sidebarWidth = showSidebar
@@ -644,7 +723,6 @@ struct ContentView: View {
 
         let maxWidth = maxSidebarWidth(for: totalWidth)
         pendingSidebarWidth = min(max(startWidth + translation, sidebarMinimumWidth), maxWidth)
-        schedulePaneResizeRender()
     }
 
     private func updateEditorWidth(with translation: CGFloat, totalWidth: CGFloat) {
@@ -661,7 +739,6 @@ struct ContentView: View {
 
         let maxWidth = maxEditorWidth(for: totalWidth, sidebarWidth: editorDragStartWidths.sidebarWidth)
         pendingEditorWidth = min(max(editorDragStartWidths.editorWidth + translation, editorMinimumWidth), maxWidth)
-        schedulePaneResizeRender()
     }
 
     private func maxSidebarWidth(for totalWidth: CGFloat) -> CGFloat {
@@ -675,29 +752,47 @@ struct ContentView: View {
         return min(editorMaximumWidth, max(editorMinimumWidth, maxAllowed))
     }
 
+    private func dividerFeedback(for totalWidth: CGFloat, metrics: LayoutMetrics) -> DividerFeedback? {
+        let visibleDivider = activeDivider ?? hoveredDivider
+
+        switch visibleDivider {
+        case .sidebar:
+            guard showSidebar else {
+                return nil
+            }
+
+            let currentX = activeDivider == .sidebar
+                ? pendingSidebarWidth + (dividerWidth / 2)
+                : nil
+            return DividerFeedback(
+                currentX: currentX,
+                minimumX: sidebarMinimumWidth + (dividerWidth / 2),
+                maximumX: maxSidebarWidth(for: totalWidth) + (dividerWidth / 2)
+            )
+        case .editor:
+            guard showPreview else {
+                return nil
+            }
+
+            let leadingX = showSidebar ? metrics.sidebarWidth + dividerWidth : 0
+            let currentX = activeDivider == .editor
+                ? leadingX + pendingEditorWidth + (dividerWidth / 2)
+                : nil
+            return DividerFeedback(
+                currentX: currentX,
+                minimumX: leadingX + editorMinimumWidth + (dividerWidth / 2),
+                maximumX: leadingX + maxEditorWidth(for: totalWidth, sidebarWidth: metrics.sidebarWidth) + (dividerWidth / 2)
+            )
+        case nil:
+            return nil
+        }
+    }
+
     private func commitPaneWidths() {
-        paneResizeTask?.cancel()
         sidebarWidth = pendingSidebarWidth
         editorWidth = pendingEditorWidth
         storedSidebarWidth = Double(sidebarWidth)
         storedEditorWidth = Double(editorWidth)
-    }
-
-    private func schedulePaneResizeRender() {
-        paneResizeTask?.cancel()
-        paneResizeTask = Task {
-            try? await Task.sleep(nanoseconds: 33_000_000)
-            guard !Task.isCancelled else {
-                return
-            }
-
-            await MainActor.run {
-                withAnimation(nil) {
-                    sidebarWidth = pendingSidebarWidth
-                    editorWidth = pendingEditorWidth
-                }
-            }
-        }
     }
 
     private var canSaveSelectedPost: Bool {
@@ -899,9 +994,20 @@ private struct LayoutMetrics {
     let editorWidth: CGFloat
 }
 
+private struct DividerFeedback {
+    let currentX: CGFloat?
+    let minimumX: CGFloat
+    let maximumX: CGFloat
+}
+
 private struct EditorDragStart {
     let sidebarWidth: CGFloat
     let editorWidth: CGFloat
+}
+
+private enum PaneDividerKind {
+    case sidebar
+    case editor
 }
 
 // NOTE: You will need to implement the WebView struct that wraps WKWebView for SwiftUI.
