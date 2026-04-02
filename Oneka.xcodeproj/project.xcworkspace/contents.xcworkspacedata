@@ -4,4 +4,56 @@
    <FileRef
       location = "self:">
    </FileRef>
+   <Group
+      location = "group:TestSites"
+      name = "TestSites">
+      <Group
+         location = "group:SandboxSite"
+         name = "SandboxSite">
+         <Group
+            location = "group:content"
+            name = "content">
+            <Group
+               location = "group:posts"
+               name = "posts">
+            </Group>
+            <Group
+               location = "group:docs"
+               name = "docs">
+            </Group>
+            <Group
+               location = "group:about"
+               name = "about">
+            </Group>
+            <Group
+               location = "group:projects"
+               name = "projects">
+            </Group>
+         </Group>
+         <Group
+            location = "group:layouts"
+            name = "layouts">
+            <Group
+               location = "group:_default"
+               name = "_default">
+            </Group>
+            <Group
+               location = "group:partials"
+               name = "partials">
+            </Group>
+         </Group>
+         <Group
+            location = "group:static"
+            name = "static">
+            <Group
+               location = "group:images"
+               name = "images">
+            </Group>
+         </Group>
+         <Group
+            location = "group:archetypes"
+            name = "archetypes">
+         </Group>
+      </Group>
+   </Group>
 </Workspace>

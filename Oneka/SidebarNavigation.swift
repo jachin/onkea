@@ -1,6 +1,10 @@
 import Combine
 import SwiftUI
 
+extension Notification.Name {
+    static let onekaOpenSiteRequested = Notification.Name("Oneka.OpenSiteRequested")
+}
+
 enum SidebarTab: Int, CaseIterable, Identifiable {
     case posts = 1
     case pages
@@ -117,6 +121,17 @@ struct SidebarTabCommands: Commands {
                 .keyboardShortcut(tab.shortcutKey, modifiers: .command)
                 .disabled(!navigationModel.isSiteOpen)
             }
+        }
+    }
+}
+
+struct OpenSiteCommands: Commands {
+    var body: some Commands {
+        CommandGroup(after: .newItem) {
+            Button("Open Site...") {
+                NotificationCenter.default.post(name: .onekaOpenSiteRequested, object: nil)
+            }
+            .keyboardShortcut("o", modifiers: .command)
         }
     }
 }

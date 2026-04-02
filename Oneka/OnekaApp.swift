@@ -32,6 +32,7 @@ struct OnekaApp: App {
         }
         .modelContainer(sharedModelContainer)
         .commands {
+            OpenSiteCommands()
             SidebarTabCommands(navigationModel: sidebarNavigation)
         }
 

@@ -211,6 +211,13 @@ struct ContentView: View {
 
             draftContentByID[selectedPostID] = newValue
         }
+        .onReceive(NotificationCenter.default.publisher(for: .onekaOpenSiteRequested)) { _ in
+            guard hugoStatus == .compatible, !isLoading else {
+                return
+            }
+
+            openSite()
+        }
         .overlay {
             switch hugoStatus {
             case .checking:
