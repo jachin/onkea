@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{{ if .Title }}{{ .Title }} | {{ end }}{{ site.Title }}</title>
+</head>
+<body>
+    <header>
+        <h1><a href="{{ "/" | relURL }}">{{ site.Title }}</a></h1>
+        <p>{{ site.Params.subtitle }}</p>
+        <hr>
+    </header>
+    <main>
+        {{ block "main" . }}{{ end }}
+    </main>
+</body>
+</html>
+

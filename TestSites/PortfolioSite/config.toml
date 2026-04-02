@@ -1,0 +1,24 @@
+baseURL = "https://portfolio.oneka.local/"
+languageCode = "en-us"
+title = "Portfolio Site"
+enableRobotsTXT = true
+canonifyURLs = false
+
+[author]
+name = "Oneka QA"
+
+[params]
+subtitle = "A portfolio site for testing project showcase and service listing workflows"
+
+[taxonomies]
+tag = "tags"
+type = "types"
+
+[permalinks]
+work = "/work/:slug/"
+blog = "/blog/:year/:slug/"
+
+[markup]
+  [markup.goldmark]
+    [markup.goldmark.renderer]
+      unsafe = true

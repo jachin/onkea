@@ -1,0 +1,24 @@
+baseURL = "https://sandbox.oneka.local/"
+languageCode = "en-us"
+title = "Sandbox Site"
+enableRobotsTXT = true
+canonifyURLs = false
+
+[author]
+name = "Oneka QA"
+
+[params]
+subtitle = "A local Hugo site for testing content workflows"
+
+[taxonomies]
+tag = "tags"
+category = "categories"
+
+[permalinks]
+posts = "/journal/:year/:month/:slug/"
+
+[markup]
+  [markup.goldmark]
+    [markup.goldmark.renderer]
+      unsafe = true
+
