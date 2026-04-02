@@ -1,6 +1,6 @@
 //
-//  YouGoHugoApp.swift
-//  YouGoHugo
+//  OnekaApp.swift
+//  Oneka
 //
 //  Created by Jachin Rupe on 3/20/26.
 //
@@ -9,7 +9,7 @@ import SwiftUI
 import SwiftData
 
 @main
-struct YouGoHugoApp: App {
+struct OnekaApp: App {
     @StateObject private var sidebarNavigation = SidebarNavigationModel()
 
     var sharedModelContainer: ModelContainer = {

@@ -7,6 +7,8 @@ struct ContentView: View {
     @EnvironmentObject private var sidebarNavigation: SidebarNavigationModel
 
     @AppStorage(EditorColorScheme.appStorageKey) private var editorColorSchemeID = EditorColorScheme.defaultPreset.id
+    @AppStorage(PostDatePreferences.autoUpdateLastModifiedKey) private var autoUpdateLastModified = PostDatePreferences.autoUpdateLastModifiedDefault
+    @AppStorage(HugoDateTimeFormat.appStorageKey) private var selectedDateTimeFormatID = HugoDateTimeFormat.defaultFormat.rawValue
     @State private var showSidebar = true
     @State private var selectedPostID: String? = nil
     @State private var markdownText: String = ""
@@ -24,11 +26,13 @@ struct ContentView: View {
     @State private var hugoServerStatus = HugoServerStatus(phase: .stopped, message: "No server running", serverURL: nil)
     @State private var savedContentByID: [String: String] = [:]
     @State private var draftContentByID: [String: String] = [:]
+    @State private var siteSettings = SiteSettings()
     @State private var isSaving = false
     @State private var contentSortOrder: ContentSortOrder = .publishDateDescending
     @State private var postBrowseMode: PostBrowseMode = .date
 
     @State private var hugoStatus: HugoStatus = .checking
+    @StateObject private var markdownEditorController = MarkdownEditorController()
 
     private var filteredContentItems: [HugoContentItem] {
         let tabFilteredItems: [HugoContentItem] = switch sidebarNavigation.selectedTab {
@@ -50,6 +54,10 @@ struct ContentView: View {
     private var editorColorScheme: EditorColorScheme {
         EditorColorScheme.preset(withID: editorColorSchemeID)
     }
+
+    private var selectedDateTimeFormat: HugoDateTimeFormat {
+        HugoDateTimeFormat.from(appStorageValue: selectedDateTimeFormatID)
+    }
     
     var body: some View {
         VStack(spacing: 0) {
@@ -61,6 +69,7 @@ struct ContentView: View {
                     selectedTab: $sidebarNavigation.selectedTab,
                     sortOrder: $contentSortOrder,
                     postBrowseMode: $postBrowseMode,
+                    siteSettings: $siteSettings,
                     isLoading: isLoading,
                     errorMessage: errorMessage,
                     config: config,
@@ -86,7 +95,8 @@ struct ContentView: View {
                                 .padding(.top, 8)
                                 MarkdownEditorView(
                                     text: $markdownText,
-                                    colorScheme: editorColorScheme
+                                    colorScheme: editorColorScheme,
+                                    controller: markdownEditorController
                                 )
                                     .padding([.leading, .trailing, .bottom], 8)
                             }
@@ -337,6 +347,7 @@ struct ContentView: View {
                         DispatchQueue.main.async {
                             stopHugoServer(hugoServerProcess)
                             config = configResult
+                            siteSettings = SiteSettings(config: configResult)
                             contentItems = loadedContentItems
                             contentMetadataDatabase = metadataDatabase
                             siteURL = url
@@ -360,6 +371,7 @@ struct ContentView: View {
                             errorMessage = "Failed to load Hugo site: \(error.localizedDescription)"
                             isLoading = false
                             config = nil
+                            siteSettings = SiteSettings()
                             contentItems = []
                             contentMetadataDatabase = HugoContentMetadataDatabase()
                             selectedPostID = nil
@@ -508,7 +520,7 @@ struct ContentView: View {
     private var windowTitle: String {
         guard let title = config?.title?.trimmingCharacters(in: .whitespacesAndNewlines),
               !title.isEmpty else {
-            return "YouGoHugo"
+            return "Oneka"
         }
 
         return title
@@ -553,6 +565,28 @@ struct ContentView: View {
             return
         }
 
+        let saveDate = Date()
+        let selectedItemID = selectedPostID
+        if autoUpdateLastModified,
+           let selectedItemID,
+           itemIDs.contains(selectedItemID),
+           let selectedDraftContent = draftContentByID[selectedItemID],
+           let selectedItem = contentItems.first(where: { $0.id == selectedItemID }),
+           hasUnsavedChanges(for: selectedItemID) {
+            let updatedContent = updatingLastModifiedDate(
+                in: selectedDraftContent,
+                to: saveDate,
+                format: selectedDateTimeFormat
+            )
+
+            if updatedContent != selectedDraftContent,
+               markdownEditorController.replaceTextUsingUndo(updatedContent, colorScheme: editorColorScheme) {
+                draftContentByID[selectedItemID] = updatedContent
+                markdownText = updatedContent
+                AppLogger.content.notice("Updated lastmod in editor before saving \(selectedItem.path, privacy: .public)")
+            }
+        }
+
         let pendingSaves = itemIDs.compactMap { itemID -> PendingSave? in
             guard let item = contentItems.first(where: { $0.id == itemID }),
                   let draftContent = draftContentByID[itemID],
@@ -560,7 +594,11 @@ struct ContentView: View {
                 return nil
             }
 
-            return PendingSave(itemID: itemID, item: item, draftContent: draftContent)
+            let contentToWrite = autoUpdateLastModified
+                ? updatingLastModifiedDate(in: draftContent, to: saveDate, format: selectedDateTimeFormat)
+                : draftContent
+
+            return PendingSave(itemID: itemID, item: item, contentToWrite: contentToWrite)
         }
 
         guard !pendingSaves.isEmpty else {
@@ -575,7 +613,7 @@ struct ContentView: View {
                 try await Task.detached(priority: .userInitiated) {
                     for pendingSave in pendingSaves {
                         let fileURL = siteURL.appendingPathComponent(pendingSave.item.path)
-                        try pendingSave.draftContent.write(to: fileURL, atomically: true, encoding: .utf8)
+                        try pendingSave.contentToWrite.write(to: fileURL, atomically: true, encoding: .utf8)
                     }
                 }.value
 
@@ -585,7 +623,11 @@ struct ContentView: View {
 
                 await MainActor.run {
                     for pendingSave in pendingSaves {
-                        savedContentByID[pendingSave.itemID] = pendingSave.draftContent
+                        savedContentByID[pendingSave.itemID] = pendingSave.contentToWrite
+                        draftContentByID[pendingSave.itemID] = pendingSave.contentToWrite
+                        if pendingSave.itemID == selectedPostID {
+                            markdownText = pendingSave.contentToWrite
+                        }
                     }
                     isSaving = false
                 }
@@ -658,7 +700,7 @@ struct ContentView: View {
 private struct PendingSave {
     let itemID: String
     let item: HugoContentItem
-    let draftContent: String
+    let contentToWrite: String
 }
 
 // NOTE: You will need to implement the WebView struct that wraps WKWebView for SwiftUI.

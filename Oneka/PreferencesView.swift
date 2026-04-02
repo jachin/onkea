@@ -2,9 +2,15 @@ import SwiftUI
 
 struct PreferencesView: View {
     @AppStorage(EditorColorScheme.appStorageKey) private var selectedSchemeID = EditorColorScheme.defaultPreset.id
+    @AppStorage(PostDatePreferences.autoUpdateLastModifiedKey) private var autoUpdateLastModified = PostDatePreferences.autoUpdateLastModifiedDefault
+    @AppStorage(HugoDateTimeFormat.appStorageKey) private var selectedDateTimeFormatID = HugoDateTimeFormat.defaultFormat.rawValue
 
     private var selectedScheme: EditorColorScheme {
         EditorColorScheme.preset(withID: selectedSchemeID)
+    }
+
+    private var selectedDateTimeFormat: HugoDateTimeFormat {
+        HugoDateTimeFormat.from(appStorageValue: selectedDateTimeFormatID)
     }
 
     var body: some View {
@@ -12,6 +18,11 @@ struct PreferencesView: View {
             editorAppearancePane
                 .tabItem {
                     Label("Editor", systemImage: "paintpalette")
+                }
+
+            postDatesPane
+                .tabItem {
+                    Label("Dates", systemImage: "calendar.badge.clock")
                 }
         }
         .frame(minWidth: 520, minHeight: 420)
@@ -41,6 +52,42 @@ struct PreferencesView: View {
             }
 
             themePreview(for: selectedScheme)
+
+            Spacer()
+        }
+        .padding(24)
+    }
+
+    private var postDatesPane: some View {
+        VStack(alignment: .leading, spacing: 20) {
+            Text("Post Dates")
+                .font(.title2.weight(.semibold))
+
+            Toggle("Automatically update last modified dates on save", isOn: $autoUpdateLastModified)
+
+            VStack(alignment: .leading, spacing: 12) {
+                Text("Date and Time Format")
+                    .font(.headline)
+
+                Picker("Date and Time Format", selection: $selectedDateTimeFormatID) {
+                    ForEach(HugoDateTimeFormat.allCases) { format in
+                        Text(format.title).tag(format.rawValue)
+                    }
+                }
+                .pickerStyle(.menu)
+                .labelsHidden()
+                .frame(maxWidth: 260, alignment: .leading)
+
+                Text(selectedDateTimeFormat.description)
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+
+                VStack(alignment: .leading, spacing: 6) {
+                    labeledValue("Hugo layout", value: selectedDateTimeFormat.rawValue)
+                    labeledValue("Example", value: selectedDateTimeFormat.sampleValue)
+                }
+                .font(.callout.monospaced())
+            }
 
             Spacer()
         }
@@ -82,6 +129,14 @@ struct PreferencesView: View {
         Text(text)
             .font(.system(.body, design: .monospaced, weight: weight))
             .foregroundStyle(Color(nsColor: color))
+    }
+
+    private func labeledValue(_ label: String, value: String) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Text(label)
+                .foregroundStyle(.secondary)
+            Text(value)
+        }
     }
 }
 

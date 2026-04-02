@@ -1,6 +1,6 @@
 //
 //  Item.swift
-//  YouGoHugo
+//  Oneka
 //
 //  Created by Jachin Rupe on 3/20/26.
 //

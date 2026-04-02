@@ -1,13 +1,13 @@
 //
-//  YouGoHugoUITestsLaunchTests.swift
-//  YouGoHugoUITests
+//  OnekaUITestsLaunchTests.swift
+//  OnekaUITests
 //
 //  Created by Jachin Rupe on 3/20/26.
 //
 
 import XCTest
 
-final class YouGoHugoUITestsLaunchTests: XCTestCase {
+final class OnekaUITestsLaunchTests: XCTestCase {
 
     override class var runsForEachTargetApplicationUIConfiguration: Bool {
         true

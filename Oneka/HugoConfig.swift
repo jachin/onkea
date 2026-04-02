@@ -6,7 +6,11 @@ public struct HugoConfig: Decodable, Equatable {
     public var title: String?
     public var baseURL: String?
     public var languageCode: String?
+    public var author: String?
     public var theme: String?
+    public var canonifyURLs: Bool?
+    public var copyright: String?
+    public var enableRobotsTXT: Bool?
     public var params: [String: AnyCodable]?
     public var menus: [String: AnyCodable]?
     public var outputs: [String: AnyCodable]?
@@ -20,7 +24,11 @@ public struct HugoConfig: Decodable, Equatable {
         title: String? = nil,
         baseURL: String? = nil,
         languageCode: String? = nil,
+        author: String? = nil,
         theme: String? = nil,
+        canonifyURLs: Bool? = nil,
+        copyright: String? = nil,
+        enableRobotsTXT: Bool? = nil,
         params: [String: AnyCodable]? = nil,
         menus: [String: AnyCodable]? = nil,
         outputs: [String: AnyCodable]? = nil,
@@ -33,7 +41,11 @@ public struct HugoConfig: Decodable, Equatable {
         self.title = title
         self.baseURL = baseURL
         self.languageCode = languageCode
+        self.author = author
         self.theme = theme
+        self.canonifyURLs = canonifyURLs
+        self.copyright = copyright
+        self.enableRobotsTXT = enableRobotsTXT
         self.params = params
         self.menus = menus
         self.outputs = outputs
@@ -49,7 +61,11 @@ public struct HugoConfig: Decodable, Equatable {
         title = container.decodeString(forKeys: ["title"])
         baseURL = container.decodeString(forKeys: ["baseURL", "baseurl"])
         languageCode = container.decodeString(forKeys: ["languageCode", "languagecode"])
+        author = container.decodeString(forKeys: ["author"])
         theme = container.decodeTheme(forKeys: ["theme"])
+        canonifyURLs = container.decodeBool(forKeys: ["canonifyURLs", "canonifyurls"])
+        copyright = container.decodeString(forKeys: ["copyright"])
+        enableRobotsTXT = container.decodeBool(forKeys: ["enableRobotsTXT", "enableRobotsTxt", "enableRobotstxt", "enablerobotstxt"])
         params = container.decodeDictionary(forKeys: ["params"])
         menus = container.decodeDictionary(forKeys: ["menus"])
         outputs = container.decodeDictionary(forKeys: ["outputs"])
@@ -63,7 +79,11 @@ public struct HugoConfig: Decodable, Equatable {
             "title",
             "baseURL", "baseurl",
             "languageCode", "languagecode",
+            "author",
             "theme",
+            "canonifyURLs", "canonifyurls",
+            "copyright",
+            "enableRobotsTXT", "enableRobotsTxt", "enableRobotstxt", "enablerobotstxt",
             "params",
             "menus",
             "outputs",
@@ -109,6 +129,16 @@ private extension KeyedDecodingContainer where K == AnyCodingKey {
         for key in keys {
             let codingKey = AnyCodingKey(key)
             if let value = try? decodeIfPresent([String: AnyCodable].self, forKey: codingKey) {
+                return value
+            }
+        }
+        return nil
+    }
+
+    func decodeBool(forKeys keys: [String]) -> Bool? {
+        for key in keys {
+            let codingKey = AnyCodingKey(key)
+            if let value = try? decodeIfPresent(Bool.self, forKey: codingKey) {
                 return value
             }
         }

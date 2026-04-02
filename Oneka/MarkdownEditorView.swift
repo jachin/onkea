@@ -1,12 +1,48 @@
 import SwiftUI
 import AppKit
+import Combine
+
+final class MarkdownEditorController: ObservableObject {
+    fileprivate weak var textView: NSTextView?
+
+    @MainActor
+    func replaceTextUsingUndo(_ value: String, colorScheme: EditorColorScheme) -> Bool {
+        guard let textView else {
+            return false
+        }
+
+        let fullRange = NSRange(location: 0, length: textView.string.utf16.count)
+        let selectedRanges = textView.selectedRanges
+
+        guard textView.shouldChangeText(in: fullRange, replacementString: value) else {
+            return false
+        }
+
+        textView.textStorage?.replaceCharacters(in: fullRange, with: value)
+        guard let textStorage = textView.textStorage else {
+            return false
+        }
+
+        MarkdownHighlighter.configureAppearance(of: textView, using: colorScheme)
+        MarkdownHighlighter.highlight(textStorage: textStorage, using: colorScheme)
+        textView.didChangeText()
+        textView.selectedRanges = selectedRanges.map { value in
+            let range = value.rangeValue
+            let clampedLocation = min(range.location, textView.string.utf16.count)
+            let clampedLength = min(range.length, textView.string.utf16.count - clampedLocation)
+            return NSValue(range: NSRange(location: clampedLocation, length: clampedLength))
+        }
+        return true
+    }
+}
 
 struct MarkdownEditorView: NSViewRepresentable {
     @Binding var text: String
     let colorScheme: EditorColorScheme
+    let controller: MarkdownEditorController
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(text: $text, colorScheme: colorScheme)
+        Coordinator(text: $text, colorScheme: colorScheme, controller: controller)
     }
 
     func makeNSView(context: Context) -> NSScrollView {
@@ -64,11 +100,13 @@ extension MarkdownEditorView {
     final class Coordinator: NSObject, NSTextViewDelegate {
         @Binding private var text: String
         private var colorScheme: EditorColorScheme
+        private let controller: MarkdownEditorController
         private var isApplyingText = false
 
-        init(text: Binding<String>, colorScheme: EditorColorScheme) {
+        init(text: Binding<String>, colorScheme: EditorColorScheme, controller: MarkdownEditorController) {
             _text = text
             self.colorScheme = colorScheme
+            self.controller = controller
         }
 
         func textDidChange(_ notification: Notification) {
@@ -84,6 +122,7 @@ extension MarkdownEditorView {
         func applyText(_ value: String, to textView: NSTextView, colorScheme: EditorColorScheme) {
             isApplyingText = true
             self.colorScheme = colorScheme
+            controller.textView = textView
             textView.string = value
             highlight(textView)
             isApplyingText = false
@@ -91,10 +130,12 @@ extension MarkdownEditorView {
 
         func updateColorScheme(_ colorScheme: EditorColorScheme, for textView: NSTextView) {
             guard self.colorScheme != colorScheme else {
+                controller.textView = textView
                 return
             }
 
             self.colorScheme = colorScheme
+            controller.textView = textView
             MarkdownHighlighter.configureAppearance(of: textView, using: colorScheme)
             highlight(textView)
         }

@@ -1,13 +1,13 @@
 //
-//  YouGoHugoUITests.swift
-//  YouGoHugoUITests
+//  OnekaUITests.swift
+//  OnekaUITests
 //
 //  Created by Jachin Rupe on 3/20/26.
 //
 
 import XCTest
 
-final class YouGoHugoUITests: XCTestCase {
+final class OnekaUITests: XCTestCase {
 
     override func setUpWithError() throws {
         // Put setup code here. This method is called before the invocation of each test method in the class.

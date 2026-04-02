@@ -1,6 +1,6 @@
 import Foundation
 import Testing
-@testable import YouGoHugo
+@testable import Oneka
 
 struct EditorColorSchemeTests {
     @Test

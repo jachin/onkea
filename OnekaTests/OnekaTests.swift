@@ -1,8 +1,8 @@
 import Foundation
 import Testing
-@testable import YouGoHugo
+@testable import Oneka
 
-struct YouGoHugoTests {
+struct OnekaTests {
     @Test
     func resolvesHugoFromConfiguredExecutable() async throws {
         let fileManager = FileManager.default
@@ -122,6 +122,61 @@ struct YouGoHugoTests {
         let metadata = parseHugoContentMetadata(from: source)
 
         #expect(metadata.categories == ["Essays", "Books"])
+    }
+
+    @Test
+    func updatesExistingYAMLLastmodOnSave() {
+        let source = """
+        ---
+        title: Corn Maze
+        lastmod: 2024-01-01
+        ---
+        Body
+        """
+        let date = Date(timeIntervalSince1970: 1_711_056_445)
+        let expectedValue = HugoDateTimeFormat.dateOnly.format(date)
+
+        let updated = updatingLastModifiedDate(in: source, to: date, format: .dateOnly)
+
+        #expect(updated.contains("lastmod: \(expectedValue)"))
+        #expect(!updated.contains("lastmod: 2024-01-01"))
+    }
+
+    @Test
+    func appendsYAMLLastmodWhenMissing() {
+        let source = """
+        ---
+        title: Corn Maze
+        tags:
+          - hugo
+        ---
+        Body
+        """
+        let date = Date(timeIntervalSince1970: 1_711_110_645)
+        let expectedValue = HugoDateTimeFormat.localDateTime.format(date)
+
+        let updated = updatingLastModifiedDate(in: source, to: date, format: .localDateTime)
+
+        #expect(updated.contains("lastmod: \(expectedValue)"))
+        #expect(updated.contains("---\nBody"))
+    }
+
+    @Test
+    func updatesExistingTOMLLastmodOnSave() {
+        let source = """
+        +++
+        title = "Corn Maze"
+        lastmod = 2024-01-01T00:00:00Z
+        +++
+        Body
+        """
+        let date = Date(timeIntervalSince1970: 1_711_127_845)
+        let expectedValue = HugoDateTimeFormat.rfc3339UTC.format(date)
+
+        let updated = updatingLastModifiedDate(in: source, to: date, format: .rfc3339UTC)
+
+        #expect(updated.contains("lastmod = \(expectedValue)"))
+        #expect(!updated.contains("lastmod = 2024-01-01T00:00:00Z"))
     }
 
     @Test

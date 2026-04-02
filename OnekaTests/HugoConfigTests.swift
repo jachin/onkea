@@ -1,7 +1,7 @@
 import Foundation
 import Testing
 import TOMLKit
-@testable import YouGoHugo
+@testable import Oneka
 
 @Suite("HugoConfig Parsing and Merging")
 struct HugoConfigTests {
@@ -42,5 +42,27 @@ theme = ["paper"]
         #expect(config.baseURL == "https://example.com/")
         #expect(config.theme == "paper")
         #expect(config.params?["subtitle"]?.value as? String == "Notes")
+    }
+
+    @Test("Parses site settings fields used by the sidebar")
+    func parsesSiteSettingsFields() async throws {
+        let toml = """
+title = "Jachin Rupe's Blog"
+baseURL = "https://jachinrupe.name/"
+languageCode = "en-us"
+author = "Jachin Rupe"
+canonifyurls = true
+copyright = "© 2020 Jachin Rupe"
+enableRobotsTXT = true
+"""
+        let decoder = TOMLDecoder()
+        let config = try decoder.decode(HugoConfig.self, from: toml)
+        #expect(config.title == "Jachin Rupe's Blog")
+        #expect(config.baseURL == "https://jachinrupe.name/")
+        #expect(config.languageCode == "en-us")
+        #expect(config.author == "Jachin Rupe")
+        #expect(config.canonifyURLs == true)
+        #expect(config.copyright == "© 2020 Jachin Rupe")
+        #expect(config.enableRobotsTXT == true)
     }
 }

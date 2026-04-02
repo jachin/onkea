@@ -17,37 +17,37 @@
 			containerPortal = 185671F12F6E34DC0097ED76 /* Project object */;
 			proxyType = 1;
 			remoteGlobalIDString = 185671F82F6E34DC0097ED76;
-			remoteInfo = YouGoHugo;
+			remoteInfo = Oneka;
 		};
 		185672132F6E34DD0097ED76 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = 185671F12F6E34DC0097ED76 /* Project object */;
 			proxyType = 1;
 			remoteGlobalIDString = 185671F82F6E34DC0097ED76;
-			remoteInfo = YouGoHugo;
+			remoteInfo = Oneka;
 		};
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
-		185671F92F6E34DC0097ED76 /* YouGoHugo.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = YouGoHugo.app; sourceTree = BUILT_PRODUCTS_DIR; };
-		185672082F6E34DD0097ED76 /* YouGoHugoTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = YouGoHugoTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
-		185672122F6E34DD0097ED76 /* YouGoHugoUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = YouGoHugoUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		185671F92F6E34DC0097ED76 /* Oneka.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Oneka.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		185672082F6E34DD0097ED76 /* OnekaTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = OnekaTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		185672122F6E34DD0097ED76 /* OnekaUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = OnekaUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
-		185671FB2F6E34DC0097ED76 /* YouGoHugo */ = {
+		185671FB2F6E34DC0097ED76 /* Oneka */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
-			path = YouGoHugo;
+			path = Oneka;
 			sourceTree = "<group>";
 		};
-		1856720B2F6E34DD0097ED76 /* YouGoHugoTests */ = {
+		1856720B2F6E34DD0097ED76 /* OnekaTests */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
-			path = YouGoHugoTests;
+			path = OnekaTests;
 			sourceTree = "<group>";
 		};
-		185672152F6E34DD0097ED76 /* YouGoHugoUITests */ = {
+		185672152F6E34DD0097ED76 /* OnekaUITests */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
-			path = YouGoHugoUITests;
+			path = OnekaUITests;
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
@@ -82,9 +82,9 @@
 		185671F02F6E34DC0097ED76 = {
 			isa = PBXGroup;
 			children = (
-				185671FB2F6E34DC0097ED76 /* YouGoHugo */,
-				1856720B2F6E34DD0097ED76 /* YouGoHugoTests */,
-				185672152F6E34DD0097ED76 /* YouGoHugoUITests */,
+				185671FB2F6E34DC0097ED76 /* Oneka */,
+				1856720B2F6E34DD0097ED76 /* OnekaTests */,
+				185672152F6E34DD0097ED76 /* OnekaUITests */,
 				185672312F6E45F10097ED76 /* Frameworks */,
 				185671FA2F6E34DC0097ED76 /* Products */,
 			);
@@ -93,9 +93,9 @@
 		185671FA2F6E34DC0097ED76 /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				185671F92F6E34DC0097ED76 /* YouGoHugo.app */,
-				185672082F6E34DD0097ED76 /* YouGoHugoTests.xctest */,
-				185672122F6E34DD0097ED76 /* YouGoHugoUITests.xctest */,
+				185671F92F6E34DC0097ED76 /* Oneka.app */,
+				185672082F6E34DD0097ED76 /* OnekaTests.xctest */,
+				185672122F6E34DD0097ED76 /* OnekaUITests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -110,9 +110,9 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
-		185671F82F6E34DC0097ED76 /* YouGoHugo */ = {
+		185671F82F6E34DC0097ED76 /* Oneka */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = 1856721C2F6E34DD0097ED76 /* Build configuration list for PBXNativeTarget "YouGoHugo" */;
+			buildConfigurationList = 1856721C2F6E34DD0097ED76 /* Build configuration list for PBXNativeTarget "Oneka" */;
 			buildPhases = (
 				185671F52F6E34DC0097ED76 /* Sources */,
 				185671F62F6E34DC0097ED76 /* Frameworks */,
@@ -123,19 +123,19 @@
 			dependencies = (
 			);
 			fileSystemSynchronizedGroups = (
-				185671FB2F6E34DC0097ED76 /* YouGoHugo */,
+				185671FB2F6E34DC0097ED76 /* Oneka */,
 			);
-			name = YouGoHugo;
+			name = Oneka;
 			packageProductDependencies = (
 				185672282F6E3AE30097ED76 /* TOMLKit */,
 			);
-			productName = YouGoHugo;
-			productReference = 185671F92F6E34DC0097ED76 /* YouGoHugo.app */;
+			productName = Oneka;
+			productReference = 185671F92F6E34DC0097ED76 /* Oneka.app */;
 			productType = "com.apple.product-type.application";
 		};
-		185672072F6E34DD0097ED76 /* YouGoHugoTests */ = {
+		185672072F6E34DD0097ED76 /* OnekaTests */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = 1856721F2F6E34DD0097ED76 /* Build configuration list for PBXNativeTarget "YouGoHugoTests" */;
+			buildConfigurationList = 1856721F2F6E34DD0097ED76 /* Build configuration list for PBXNativeTarget "OnekaTests" */;
 			buildPhases = (
 				185672042F6E34DD0097ED76 /* Sources */,
 				185672052F6E34DD0097ED76 /* Frameworks */,
@@ -147,19 +147,19 @@
 				1856720A2F6E34DD0097ED76 /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
-				1856720B2F6E34DD0097ED76 /* YouGoHugoTests */,
+				1856720B2F6E34DD0097ED76 /* OnekaTests */,
 			);
-			name = YouGoHugoTests;
+			name = OnekaTests;
 			packageProductDependencies = (
 				185672322F6E45F10097ED76 /* TOMLKit */,
 			);
-			productName = YouGoHugoTests;
-			productReference = 185672082F6E34DD0097ED76 /* YouGoHugoTests.xctest */;
+			productName = OnekaTests;
+			productReference = 185672082F6E34DD0097ED76 /* OnekaTests.xctest */;
 			productType = "com.apple.product-type.bundle.unit-test";
 		};
-		185672112F6E34DD0097ED76 /* YouGoHugoUITests */ = {
+		185672112F6E34DD0097ED76 /* OnekaUITests */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = 185672222F6E34DD0097ED76 /* Build configuration list for PBXNativeTarget "YouGoHugoUITests" */;
+			buildConfigurationList = 185672222F6E34DD0097ED76 /* Build configuration list for PBXNativeTarget "OnekaUITests" */;
 			buildPhases = (
 				1856720E2F6E34DD0097ED76 /* Sources */,
 				1856720F2F6E34DD0097ED76 /* Frameworks */,
@@ -171,13 +171,13 @@
 				185672142F6E34DD0097ED76 /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
-				185672152F6E34DD0097ED76 /* YouGoHugoUITests */,
+				185672152F6E34DD0097ED76 /* OnekaUITests */,
 			);
-			name = YouGoHugoUITests;
+			name = OnekaUITests;
 			packageProductDependencies = (
 			);
-			productName = YouGoHugoUITests;
-			productReference = 185672122F6E34DD0097ED76 /* YouGoHugoUITests.xctest */;
+			productName = OnekaUITests;
+			productReference = 185672122F6E34DD0097ED76 /* OnekaUITests.xctest */;
 			productType = "com.apple.product-type.bundle.ui-testing";
 		};
 /* End PBXNativeTarget section */
@@ -203,7 +203,7 @@
 					};
 				};
 			};
-			buildConfigurationList = 185671F42F6E34DC0097ED76 /* Build configuration list for PBXProject "YouGoHugo" */;
+			buildConfigurationList = 185671F42F6E34DC0097ED76 /* Build configuration list for PBXProject "Oneka" */;
 			developmentRegion = en;
 			hasScannedForEncodings = 0;
 			knownRegions = (
@@ -220,9 +220,9 @@
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
-				185671F82F6E34DC0097ED76 /* YouGoHugo */,
-				185672072F6E34DD0097ED76 /* YouGoHugoTests */,
-				185672112F6E34DD0097ED76 /* YouGoHugoUITests */,
+				185671F82F6E34DC0097ED76 /* Oneka */,
+				185672072F6E34DD0097ED76 /* OnekaTests */,
+				185672112F6E34DD0097ED76 /* OnekaUITests */,
 			);
 		};
 /* End PBXProject section */
@@ -278,12 +278,12 @@
 /* Begin PBXTargetDependency section */
 		1856720A2F6E34DD0097ED76 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
-			target = 185671F82F6E34DC0097ED76 /* YouGoHugo */;
+			target = 185671F82F6E34DC0097ED76 /* Oneka */;
 			targetProxy = 185672092F6E34DD0097ED76 /* PBXContainerItemProxy */;
 		};
 		185672142F6E34DD0097ED76 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
-			target = 185671F82F6E34DC0097ED76 /* YouGoHugo */;
+			target = 185671F82F6E34DC0097ED76 /* Oneka */;
 			targetProxy = 185672132F6E34DD0097ED76 /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
@@ -424,7 +424,7 @@
 					"@executable_path/../Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = us.rupe.YouGoHugo;
+				PRODUCT_BUNDLE_IDENTIFIER = us.rupe.Oneka;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				REGISTER_APP_GROUPS = YES;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
@@ -453,7 +453,7 @@
 					"@executable_path/../Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = us.rupe.YouGoHugo;
+				PRODUCT_BUNDLE_IDENTIFIER = us.rupe.Oneka;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				REGISTER_APP_GROUPS = YES;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
@@ -474,14 +474,14 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				MACOSX_DEPLOYMENT_TARGET = 26.2;
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = us.rupe.YouGoHugoTests;
+				PRODUCT_BUNDLE_IDENTIFIER = us.rupe.OnekaTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = NO;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_EMIT_LOC_STRINGS = NO;
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 5.0;
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/YouGoHugo.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/YouGoHugo";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Oneka.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Oneka";
 			};
 			name = Debug;
 		};
@@ -494,14 +494,14 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				MACOSX_DEPLOYMENT_TARGET = 26.2;
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = us.rupe.YouGoHugoTests;
+				PRODUCT_BUNDLE_IDENTIFIER = us.rupe.OnekaTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = NO;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_EMIT_LOC_STRINGS = NO;
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 5.0;
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/YouGoHugo.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/YouGoHugo";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Oneka.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Oneka";
 			};
 			name = Release;
 		};
@@ -512,14 +512,14 @@
 				CURRENT_PROJECT_VERSION = 1;
 				GENERATE_INFOPLIST_FILE = YES;
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = us.rupe.YouGoHugoUITests;
+				PRODUCT_BUNDLE_IDENTIFIER = us.rupe.OnekaUITests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = NO;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_EMIT_LOC_STRINGS = NO;
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 5.0;
-				TEST_TARGET_NAME = YouGoHugo;
+				TEST_TARGET_NAME = Oneka;
 			};
 			name = Debug;
 		};
@@ -530,21 +530,21 @@
 				CURRENT_PROJECT_VERSION = 1;
 				GENERATE_INFOPLIST_FILE = YES;
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = us.rupe.YouGoHugoUITests;
+				PRODUCT_BUNDLE_IDENTIFIER = us.rupe.OnekaUITests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = NO;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_EMIT_LOC_STRINGS = NO;
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 5.0;
-				TEST_TARGET_NAME = YouGoHugo;
+				TEST_TARGET_NAME = Oneka;
 			};
 			name = Release;
 		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
-		185671F42F6E34DC0097ED76 /* Build configuration list for PBXProject "YouGoHugo" */ = {
+		185671F42F6E34DC0097ED76 /* Build configuration list for PBXProject "Oneka" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				1856721A2F6E34DD0097ED76 /* Debug */,
@@ -553,7 +553,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		1856721C2F6E34DD0097ED76 /* Build configuration list for PBXNativeTarget "YouGoHugo" */ = {
+		1856721C2F6E34DD0097ED76 /* Build configuration list for PBXNativeTarget "Oneka" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				1856721D2F6E34DD0097ED76 /* Debug */,
@@ -562,7 +562,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		1856721F2F6E34DD0097ED76 /* Build configuration list for PBXNativeTarget "YouGoHugoTests" */ = {
+		1856721F2F6E34DD0097ED76 /* Build configuration list for PBXNativeTarget "OnekaTests" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				185672202F6E34DD0097ED76 /* Debug */,
@@ -571,7 +571,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		185672222F6E34DD0097ED76 /* Build configuration list for PBXNativeTarget "YouGoHugoUITests" */ = {
+		185672222F6E34DD0097ED76 /* Build configuration list for PBXNativeTarget "OnekaUITests" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				185672232F6E34DD0097ED76 /* Debug */,

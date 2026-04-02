@@ -241,6 +241,42 @@ func parseHugoContentMetadata(from source: String, fallbackItem: HugoContentItem
     )
 }
 
+func updatingLastModifiedDate(
+    in source: String,
+    to date: Date,
+    format: HugoDateTimeFormat
+) -> String {
+    let lineEnding = source.contains("\r\n") ? "\r\n" : "\n"
+    let hadUTF8BOM = source.hasPrefix("\u{FEFF}")
+    let sanitizedSource = source.removingUTF8BOM
+    let normalizedSource = sanitizedSource.replacingOccurrences(of: "\r\n", with: "\n")
+
+    let updatedNormalizedSource: String
+    if normalizedSource.hasPrefix("---\n") || normalizedSource == "---" {
+        updatedNormalizedSource = updateDelimitedFrontMatter(
+            in: normalizedSource,
+            delimiter: "---",
+            replacementLine: "lastmod: \(format.format(date))",
+            matcher: isYAMLLastmodLine
+        ) ?? normalizedSource
+    } else if normalizedSource.hasPrefix("+++\n") || normalizedSource == "+++" {
+        updatedNormalizedSource = updateDelimitedFrontMatter(
+            in: normalizedSource,
+            delimiter: "+++",
+            replacementLine: "lastmod = \(format.format(date))",
+            matcher: isTOMLLastmodLine
+        ) ?? normalizedSource
+    } else {
+        updatedNormalizedSource = normalizedSource
+    }
+
+    let restoredLineEndings = lineEnding == "\n"
+        ? updatedNormalizedSource
+        : updatedNormalizedSource.replacingOccurrences(of: "\n", with: lineEnding)
+
+    return hadUTF8BOM ? "\u{FEFF}\(restoredLineEndings)" : restoredLineEndings
+}
+
 func parseHugoContentList(_ output: String) throws -> [HugoContentItem] {
     let rows = output
         .split(whereSeparator: \.isNewline)
@@ -388,6 +424,76 @@ private func parseDelimitedFrontMatterMetadata(
     case .json:
         return nil
     }
+}
+
+private func updateDelimitedFrontMatter(
+    in source: String,
+    delimiter: String,
+    replacementLine: String,
+    matcher: (String) -> Bool
+) -> String? {
+    let prefix = "\(delimiter)\n"
+    guard source.hasPrefix(prefix) else {
+        return nil
+    }
+
+    let bodyStart = source.index(source.startIndex, offsetBy: prefix.count)
+    guard let closingRange = source[bodyStart...].range(of: "\n\(delimiter)") else {
+        return nil
+    }
+
+    let metadataBlock = String(source[bodyStart..<closingRange.lowerBound])
+    let updatedMetadataBlock = replaceOrAppendLine(
+        in: metadataBlock,
+        replacementLine: replacementLine,
+        matcher: matcher
+    )
+
+    return prefix + updatedMetadataBlock + source[closingRange.lowerBound...]
+}
+
+private func replaceOrAppendLine(
+    in metadataBlock: String,
+    replacementLine: String,
+    matcher: (String) -> Bool
+) -> String {
+    var lines = metadataBlock.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+
+    if let lineIndex = lines.firstIndex(where: matcher) {
+        let existingLine = lines[lineIndex]
+        let indentation = String(existingLine.prefix { $0 == " " || $0 == "\t" })
+        lines[lineIndex] = indentation + replacementLine
+    } else {
+        if !lines.isEmpty, !lines.last!.isEmpty {
+            lines.append(replacementLine)
+        } else if lines.isEmpty {
+            lines = [replacementLine]
+        } else {
+            lines.insert(replacementLine, at: max(lines.count - 1, 0))
+        }
+    }
+
+    return lines.joined(separator: "\n")
+}
+
+private func isYAMLLastmodLine(_ line: String) -> Bool {
+    let trimmed = line.trimmingCharacters(in: .whitespaces)
+    guard !trimmed.hasPrefix("#"), let separatorIndex = trimmed.firstIndex(of: ":") else {
+        return false
+    }
+
+    let key = trimmed[..<separatorIndex].trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    return key == "lastmod"
+}
+
+private func isTOMLLastmodLine(_ line: String) -> Bool {
+    let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !trimmed.hasPrefix("#"), let separatorIndex = trimmed.firstIndex(of: "=") else {
+        return false
+    }
+
+    let key = trimmed[..<separatorIndex].trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    return key == "lastmod"
 }
 
 private func parseYAMLFrontMatterMetadataBlock(_ block: String) -> [String: [String]] {

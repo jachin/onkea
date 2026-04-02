@@ -16,9 +16,9 @@
             <BuildableReference
                BuildableIdentifier = "primary"
                BlueprintIdentifier = "185671F82F6E34DC0097ED76"
-               BuildableName = "YouGoHugo.app"
-               BlueprintName = "YouGoHugo"
-               ReferencedContainer = "container:YouGoHugo.xcodeproj">
+               BuildableName = "Oneka.app"
+               BlueprintName = "Oneka"
+               ReferencedContainer = "container:Oneka.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
       </BuildActionEntries>
@@ -36,9 +36,9 @@
             <BuildableReference
                BuildableIdentifier = "primary"
                BlueprintIdentifier = "185672072F6E34DD0097ED76"
-               BuildableName = "YouGoHugoTests.xctest"
-               BlueprintName = "YouGoHugoTests"
-               ReferencedContainer = "container:YouGoHugo.xcodeproj">
+               BuildableName = "OnekaTests.xctest"
+               BlueprintName = "OnekaTests"
+               ReferencedContainer = "container:Oneka.xcodeproj">
             </BuildableReference>
          </TestableReference>
          <TestableReference
@@ -47,9 +47,9 @@
             <BuildableReference
                BuildableIdentifier = "primary"
                BlueprintIdentifier = "185672112F6E34DD0097ED76"
-               BuildableName = "YouGoHugoUITests.xctest"
-               BlueprintName = "YouGoHugoUITests"
-               ReferencedContainer = "container:YouGoHugo.xcodeproj">
+               BuildableName = "OnekaUITests.xctest"
+               BlueprintName = "OnekaUITests"
+               ReferencedContainer = "container:Oneka.xcodeproj">
             </BuildableReference>
          </TestableReference>
       </Testables>
@@ -69,9 +69,9 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "185671F82F6E34DC0097ED76"
-            BuildableName = "YouGoHugo.app"
-            BlueprintName = "YouGoHugo"
-            ReferencedContainer = "container:YouGoHugo.xcodeproj">
+            BuildableName = "Oneka.app"
+            BlueprintName = "Oneka"
+            ReferencedContainer = "container:Oneka.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
    </LaunchAction>
@@ -86,9 +86,9 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "185671F82F6E34DC0097ED76"
-            BuildableName = "YouGoHugo.app"
-            BlueprintName = "YouGoHugo"
-            ReferencedContainer = "container:YouGoHugo.xcodeproj">
+            BuildableName = "Oneka.app"
+            BlueprintName = "Oneka"
+            ReferencedContainer = "container:Oneka.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
    </ProfileAction>

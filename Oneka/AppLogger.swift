@@ -2,7 +2,7 @@ import Foundation
 import OSLog
 
 enum AppLogger {
-    private static let subsystem = Bundle.main.bundleIdentifier ?? "us.rupe.YouGoHugo"
+    private static let subsystem = Bundle.main.bundleIdentifier ?? "us.rupe.Oneka"
 
     static let app = Logger(subsystem: subsystem, category: "app")
     static let hugo = Logger(subsystem: subsystem, category: "hugo")

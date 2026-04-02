@@ -7,6 +7,7 @@ struct ContentSidebar: View {
     @Binding var selectedTab: SidebarTab
     @Binding var sortOrder: ContentSortOrder
     @Binding var postBrowseMode: PostBrowseMode
+    @Binding var siteSettings: SiteSettings
 
     let isLoading: Bool
     let errorMessage: String?
@@ -56,8 +57,10 @@ struct ContentSidebar: View {
                         postsState
                     case .pages:
                         pagesState
-                    case .publishing, .siteSettings:
+                    case .publishing:
                         placeholderState
+                    case .siteSettings:
+                        siteSettingsState
                     }
                 }
             }
@@ -273,6 +276,78 @@ struct ContentSidebar: View {
             description: Text("Coming soon.")
         )
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private var siteSettingsState: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 20) {
+                settingsSection("General") {
+                    LabeledContent("Base URL") {
+                        TextField("https://example.com/", text: $siteSettings.baseURL)
+                            .textFieldStyle(.roundedBorder)
+                            .multilineTextAlignment(.leading)
+                            .frame(maxWidth: .infinity)
+                    }
+
+                    LabeledContent("Language") {
+                        TextField("en-us", text: $siteSettings.languageCode)
+                            .textFieldStyle(.roundedBorder)
+                            .frame(width: 120)
+                    }
+
+                    LabeledContent("Title") {
+                        TextField("Site title", text: $siteSettings.title)
+                            .textFieldStyle(.roundedBorder)
+                            .frame(maxWidth: .infinity)
+                    }
+
+                    LabeledContent("Author") {
+                        TextField("Author name", text: $siteSettings.author)
+                            .textFieldStyle(.roundedBorder)
+                            .frame(maxWidth: .infinity)
+                    }
+
+                    LabeledContent("Copyright") {
+                        TextField("Copyright notice", text: $siteSettings.copyright)
+                            .textFieldStyle(.roundedBorder)
+                            .frame(maxWidth: .infinity)
+                    }
+                }
+
+                settingsSection("Publishing") {
+                    Toggle("Canonify URLs", isOn: $siteSettings.canonifyURLs)
+                    Toggle("Generate robots.txt", isOn: $siteSettings.enableRobotsTXT)
+                }
+
+                if config != nil {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Loaded From Config")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.secondary)
+
+                        Text("Values are initialized from the site's current Hugo config when the site opens.")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+            .padding()
+        }
+    }
+
+    private func settingsSection<Content: View>(
+        _ title: String,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text(title)
+                .font(.headline)
+
+            content()
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
     }
 
     private var collapsedSidebar: some View {
