@@ -2,7 +2,7 @@ import Foundation
 
 struct SiteSettings: Equatable {
     var baseURL: String
-    var languageCode: String
+    var locale: String
     var title: String
     var author: String
     var canonifyURLs: Bool
@@ -11,7 +11,7 @@ struct SiteSettings: Equatable {
 
     init(
         baseURL: String = "",
-        languageCode: String = "",
+        locale: String = "",
         title: String = "",
         author: String = "",
         canonifyURLs: Bool = false,
@@ -19,7 +19,7 @@ struct SiteSettings: Equatable {
         enableRobotsTXT: Bool = false
     ) {
         self.baseURL = baseURL
-        self.languageCode = languageCode
+        self.locale = locale
         self.title = title
         self.author = author
         self.canonifyURLs = canonifyURLs
@@ -30,9 +30,9 @@ struct SiteSettings: Equatable {
     init(config: HugoConfig) {
         self.init(
             baseURL: config.baseURL ?? "",
-            languageCode: config.languageCode ?? "",
+            locale: config.preferredLocale ?? "",
             title: config.title ?? "",
-            author: config.author ?? "",
+            author: config.preferredAuthorName ?? "",
             canonifyURLs: config.canonifyURLs ?? false,
             copyright: config.copyright ?? "",
             enableRobotsTXT: config.enableRobotsTXT ?? false

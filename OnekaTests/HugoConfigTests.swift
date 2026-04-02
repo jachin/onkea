@@ -49,7 +49,7 @@ theme = ["paper"]
         let toml = """
 title = "Jachin Rupe's Blog"
 baseURL = "https://jachinrupe.name/"
-languageCode = "en-us"
+locale = "en-us"
 author = "Jachin Rupe"
 canonifyurls = true
 copyright = "© 2020 Jachin Rupe"
@@ -59,10 +59,28 @@ enableRobotsTXT = true
         let config = try decoder.decode(HugoConfig.self, from: toml)
         #expect(config.title == "Jachin Rupe's Blog")
         #expect(config.baseURL == "https://jachinrupe.name/")
-        #expect(config.languageCode == "en-us")
-        #expect(config.author == "Jachin Rupe")
+        #expect(config.locale == "en-us")
+        #expect(config.preferredLocale == "en-us")
+        #expect(config.authorName == "Jachin Rupe")
+        #expect(config.preferredAuthorName == "Jachin Rupe")
         #expect(config.canonifyURLs == true)
         #expect(config.copyright == "© 2020 Jachin Rupe")
         #expect(config.enableRobotsTXT == true)
+    }
+
+    @Test("Supports deprecated languageCode and structured author values")
+    func parsesDeprecatedLanguageCodeAndStructuredAuthor() async throws {
+        let toml = """
+languageCode = "en-us"
+
+[author]
+name = "Jachin Rupe"
+"""
+        let decoder = TOMLDecoder()
+        let config = try decoder.decode(HugoConfig.self, from: toml)
+        #expect(config.languageCode == "en-us")
+        #expect(config.preferredLocale == "en-us")
+        #expect(config.author?["name"]?.value as? String == "Jachin Rupe")
+        #expect(config.preferredAuthorName == "Jachin Rupe")
     }
 }

@@ -289,8 +289,8 @@ struct ContentSidebar: View {
                             .frame(maxWidth: .infinity)
                     }
 
-                    LabeledContent("Language") {
-                        TextField("en-us", text: $siteSettings.languageCode)
+                    LabeledContent("Locale") {
+                        TextField("en-us", text: $siteSettings.locale)
                             .textFieldStyle(.roundedBorder)
                             .frame(width: 120)
                     }
@@ -325,7 +325,7 @@ struct ContentSidebar: View {
                             .font(.caption.weight(.semibold))
                             .foregroundStyle(.secondary)
 
-                        Text("Values are initialized from the site's current Hugo config when the site opens.")
+                        Text("Values are initialized from `hugo config`, so deprecated keys are shown in Hugo's normalized form.")
                             .font(.footnote)
                             .foregroundStyle(.secondary)
                     }

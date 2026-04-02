@@ -4,11 +4,16 @@ import Foundation
 import OSLog
 
 struct ContentView: View {
+    private static let sidebarWidthStorageKey = "ContentView.sidebarWidth"
+    private static let editorWidthStorageKey = "ContentView.editorWidth"
+
     @EnvironmentObject private var sidebarNavigation: SidebarNavigationModel
 
     @AppStorage(EditorColorScheme.appStorageKey) private var editorColorSchemeID = EditorColorScheme.defaultPreset.id
     @AppStorage(PostDatePreferences.autoUpdateLastModifiedKey) private var autoUpdateLastModified = PostDatePreferences.autoUpdateLastModifiedDefault
     @AppStorage(HugoDateTimeFormat.appStorageKey) private var selectedDateTimeFormatID = HugoDateTimeFormat.defaultFormat.rawValue
+    @AppStorage(Self.sidebarWidthStorageKey) private var storedSidebarWidth = 340.0
+    @AppStorage(Self.editorWidthStorageKey) private var storedEditorWidth = 400.0
     @State private var showSidebar = true
     @State private var selectedPostID: String? = nil
     @State private var markdownText: String = ""
@@ -33,6 +38,13 @@ struct ContentView: View {
 
     @State private var hugoStatus: HugoStatus = .checking
     @StateObject private var markdownEditorController = MarkdownEditorController()
+    @State private var sidebarWidth: CGFloat = 340
+    @State private var editorWidth: CGFloat = 400
+    @State private var pendingSidebarWidth: CGFloat = 340
+    @State private var pendingEditorWidth: CGFloat = 400
+    @State private var sidebarDragStartWidth: CGFloat?
+    @State private var editorDragStartWidths: EditorDragStart?
+    @State private var paneResizeTask: Task<Void, Never>?
 
     private var filteredContentItems: [HugoContentItem] {
         let tabFilteredItems: [HugoContentItem] = switch sidebarNavigation.selectedTab {
@@ -58,70 +70,29 @@ struct ContentView: View {
     private var selectedDateTimeFormat: HugoDateTimeFormat {
         HugoDateTimeFormat.from(appStorageValue: selectedDateTimeFormatID)
     }
+
+    private var selectedContentItem: HugoContentItem? {
+        guard let selectedPostID else {
+            return nil
+        }
+
+        return contentItems.first(where: { $0.id == selectedPostID })
+    }
+
+    private let sidebarMinimumWidth: CGFloat = 280
+    private let sidebarMaximumWidth: CGFloat = 420
+    private let editorMinimumWidth: CGFloat = 320
+    private let editorMaximumWidth: CGFloat = 720
+    private let previewMinimumWidth: CGFloat = 360
+    private let dividerWidth: CGFloat = 10
     
     var body: some View {
         VStack(spacing: 0) {
-            HStack(spacing: 0) {
-                ContentSidebar(
-                    isVisible: $showSidebar,
-                    isSiteOpen: $siteIsOpen,
-                    selectedPostID: $selectedPostID,
-                    selectedTab: $sidebarNavigation.selectedTab,
-                    sortOrder: $contentSortOrder,
-                    postBrowseMode: $postBrowseMode,
-                    siteSettings: $siteSettings,
-                    isLoading: isLoading,
-                    errorMessage: errorMessage,
-                    config: config,
-                    contentItems: filteredContentItems,
-                    contentMetadataDatabase: contentMetadataDatabase,
-                    contentErrorMessage: contentErrorMessage,
-                    hasUnsavedChanges: hasUnsavedChanges(for:),
-                    openSite: openSite,
-                    createSite: { siteIsOpen = true /* TODO: implement creation */ }
-                )
-                if showSidebar {
-                    Divider()
-                }
+            GeometryReader { proxy in
                 Group {
                     if siteIsOpen {
-                        HStack(spacing: 0) {
-                            VStack(alignment: .leading) {
-                                HStack {
-                                    Text("Markdown Editor")
-                                        .font(.caption)
-                                    Spacer()
-                                }
-                                .padding(.top, 8)
-                                MarkdownEditorView(
-                                    text: $markdownText,
-                                    colorScheme: editorColorScheme,
-                                    controller: markdownEditorController
-                                )
-                                    .padding([.leading, .trailing, .bottom], 8)
-                            }
-                            .frame(minWidth: 300, idealWidth: 400)
-                            Divider()
-                            VStack(alignment: .leading) {
-                                Text("Preview")
-                                    .font(.caption)
-                                    .padding(.top, 8)
-                                Group {
-                                    if let previewURL {
-                                        WebView(url: previewURL)
-                                    } else {
-                                        ContentUnavailableView(
-                                            "Preview Unavailable",
-                                            systemImage: "network.slash",
-                                            description: Text(hugoServerStatus.message)
-                                        )
-                                    }
-                                }
-                                .padding([.leading, .trailing, .bottom], 8)
-                            }
-                        }
-                        .frame(maxWidth: .infinity)
-                        .disabled(hugoStatus != .compatible)
+                        resizableWorkspace(totalWidth: proxy.size.width)
+                            .disabled(hugoStatus != .compatible)
                     } else {
                         initialWorkspaceState
                     }
@@ -164,12 +135,18 @@ struct ContentView: View {
         }
         .onAppear {
             sidebarNavigation.isSiteOpen = siteIsOpen
+            sidebarWidth = CGFloat(storedSidebarWidth)
+            editorWidth = CGFloat(storedEditorWidth)
+            pendingSidebarWidth = sidebarWidth
+            pendingEditorWidth = editorWidth
         }
         .onDisappear {
             stopHugoServer(hugoServerProcess)
             hugoServerProcess = nil
             previewURL = nil
             hugoServerStatus = HugoServerStatus(phase: .stopped, message: "No server running", serverURL: nil)
+            paneResizeTask?.cancel()
+            commitPaneWidths()
         }
         .onChange(of: siteIsOpen) { _, newValue in
             sidebarNavigation.isSiteOpen = newValue
@@ -185,8 +162,13 @@ struct ContentView: View {
             syncSelectionWithVisibleTab()
         }
         .onChange(of: selectedPostID) { _, newValue in
-            guard let newValue,
-                  let siteURL,
+            guard let newValue else {
+                previewURL = previewURLForSelectedPost(using: hugoServerStatus.serverURL)
+                markdownText = ""
+                return
+            }
+
+            guard let siteURL,
                   let selectedItem = contentItems.first(where: { $0.id == newValue }) else {
                 return
             }
@@ -301,6 +283,131 @@ struct ContentView: View {
                 hugoStatus = .notInstalled
             }
         }
+    }
+
+    @ViewBuilder
+    private func resizableWorkspace(totalWidth: CGFloat) -> some View {
+        let metrics = layoutMetrics(for: totalWidth)
+
+        HStack(spacing: 0) {
+            if showSidebar {
+                sidebarPane
+                    .frame(width: metrics.sidebarWidth)
+
+                paneDivider(cursor: .resizeLeftRight) { value in
+                    updateSidebarWidth(with: value.translation.width, totalWidth: totalWidth)
+                } onEnded: {
+                    sidebarDragStartWidth = nil
+                    commitPaneWidths()
+                }
+            }
+
+            Group {
+                if selectedContentItem != nil {
+                    editorPane
+                } else {
+                    editorPlaceholderPane
+                }
+            }
+            .frame(width: metrics.editorWidth)
+
+            paneDivider(cursor: .resizeLeftRight) { value in
+                updateEditorWidth(with: value.translation.width, totalWidth: totalWidth)
+            } onEnded: {
+                editorDragStartWidths = nil
+                commitPaneWidths()
+            }
+
+            previewPane
+                .frame(minWidth: previewMinimumWidth, maxWidth: .infinity)
+        }
+    }
+
+    private var sidebarPane: some View {
+        ContentSidebar(
+            isVisible: $showSidebar,
+            isSiteOpen: $siteIsOpen,
+            selectedPostID: $selectedPostID,
+            selectedTab: $sidebarNavigation.selectedTab,
+            sortOrder: $contentSortOrder,
+            postBrowseMode: $postBrowseMode,
+            siteSettings: $siteSettings,
+            isLoading: isLoading,
+            errorMessage: errorMessage,
+            config: config,
+            contentItems: filteredContentItems,
+            contentMetadataDatabase: contentMetadataDatabase,
+            contentErrorMessage: contentErrorMessage,
+            hasUnsavedChanges: hasUnsavedChanges(for:),
+            openSite: openSite,
+            createSite: { siteIsOpen = true /* TODO: implement creation */ }
+        )
+    }
+
+    private var editorPane: some View {
+        VStack(alignment: .leading) {
+            MarkdownEditorView(
+                text: $markdownText,
+                colorScheme: editorColorScheme,
+                controller: markdownEditorController
+            )
+        }
+    }
+
+    private var editorPlaceholderPane: some View {
+        ContentUnavailableView(
+            "No Content Selected",
+            systemImage: "square.and.pencil",
+            description: Text("Select a post or page to edit it here.")
+        )
+        .frame(maxHeight: .infinity)
+    }
+
+    private var previewPane: some View {
+        VStack(alignment: .leading) {
+            Group {
+                if let previewURL {
+                    WebView(url: previewURL)
+                } else {
+                    ContentUnavailableView(
+                        "Preview Unavailable",
+                        systemImage: "network.slash",
+                        description: Text(hugoServerStatus.message)
+                    )
+                }
+            }
+            .padding(8)
+        }
+    }
+
+    private func paneDivider(
+        cursor: NSCursor,
+        onChanged: @escaping (DragGesture.Value) -> Void,
+        onEnded: @escaping () -> Void
+    ) -> some View {
+        Rectangle()
+            .fill(.clear)
+            .frame(width: dividerWidth)
+            .overlay {
+                Rectangle()
+                    .fill(Color.primary.opacity(0.12))
+                    .frame(width: 1)
+            }
+            .contentShape(Rectangle())
+            .onHover { isHovering in
+                if isHovering {
+                    cursor.push()
+                } else {
+                    NSCursor.pop()
+                }
+            }
+            .gesture(
+                DragGesture(minimumDistance: 0)
+                    .onChanged(onChanged)
+                    .onEnded { _ in
+                        onEnded()
+                    }
+            )
     }
     
     private func openSite() {
@@ -509,6 +616,90 @@ struct ContentView: View {
         return serverURL
     }
 
+    private func layoutMetrics(for totalWidth: CGFloat) -> LayoutMetrics {
+        let visibleSidebarWidth = showSidebar ? sidebarWidth : 0
+        let availableWithoutPreview = totalWidth - previewMinimumWidth - dividerWidth
+        let sidebarWidth = showSidebar
+            ? min(max(visibleSidebarWidth, sidebarMinimumWidth), min(sidebarMaximumWidth, max(availableWithoutPreview - editorMinimumWidth - dividerWidth, sidebarMinimumWidth)))
+            : 0
+
+        let editorAvailable = totalWidth - sidebarWidth - previewMinimumWidth - dividerWidth - (showSidebar ? dividerWidth : 0)
+        let editorWidth = min(
+            max(self.editorWidth, editorMinimumWidth),
+            min(editorMaximumWidth, max(editorAvailable, editorMinimumWidth))
+        )
+
+        return LayoutMetrics(sidebarWidth: sidebarWidth, editorWidth: editorWidth)
+    }
+
+    private func updateSidebarWidth(with translation: CGFloat, totalWidth: CGFloat) {
+        guard showSidebar else {
+            return
+        }
+
+        let startWidth = sidebarDragStartWidth ?? sidebarWidth
+        if sidebarDragStartWidth == nil {
+            sidebarDragStartWidth = startWidth
+        }
+
+        let maxWidth = maxSidebarWidth(for: totalWidth)
+        pendingSidebarWidth = min(max(startWidth + translation, sidebarMinimumWidth), maxWidth)
+        schedulePaneResizeRender()
+    }
+
+    private func updateEditorWidth(with translation: CGFloat, totalWidth: CGFloat) {
+        if editorDragStartWidths == nil {
+            editorDragStartWidths = EditorDragStart(
+                sidebarWidth: showSidebar ? sidebarWidth : 0,
+                editorWidth: editorWidth
+            )
+        }
+
+        guard let editorDragStartWidths else {
+            return
+        }
+
+        let maxWidth = maxEditorWidth(for: totalWidth, sidebarWidth: editorDragStartWidths.sidebarWidth)
+        pendingEditorWidth = min(max(editorDragStartWidths.editorWidth + translation, editorMinimumWidth), maxWidth)
+        schedulePaneResizeRender()
+    }
+
+    private func maxSidebarWidth(for totalWidth: CGFloat) -> CGFloat {
+        let maxAllowed = totalWidth - previewMinimumWidth - editorMinimumWidth - (dividerWidth * 2)
+        return min(sidebarMaximumWidth, max(sidebarMinimumWidth, maxAllowed))
+    }
+
+    private func maxEditorWidth(for totalWidth: CGFloat, sidebarWidth: CGFloat) -> CGFloat {
+        let dividerAllowance = showSidebar ? dividerWidth * 2 : dividerWidth
+        let maxAllowed = totalWidth - sidebarWidth - previewMinimumWidth - dividerAllowance
+        return min(editorMaximumWidth, max(editorMinimumWidth, maxAllowed))
+    }
+
+    private func commitPaneWidths() {
+        paneResizeTask?.cancel()
+        sidebarWidth = pendingSidebarWidth
+        editorWidth = pendingEditorWidth
+        storedSidebarWidth = Double(sidebarWidth)
+        storedEditorWidth = Double(editorWidth)
+    }
+
+    private func schedulePaneResizeRender() {
+        paneResizeTask?.cancel()
+        paneResizeTask = Task {
+            try? await Task.sleep(nanoseconds: 33_000_000)
+            guard !Task.isCancelled else {
+                return
+            }
+
+            await MainActor.run {
+                withAnimation(nil) {
+                    sidebarWidth = pendingSidebarWidth
+                    editorWidth = pendingEditorWidth
+                }
+            }
+        }
+    }
+
     private var canSaveSelectedPost: Bool {
         guard let selectedPostID, siteURL != nil else {
             return false
@@ -701,6 +892,16 @@ private struct PendingSave {
     let itemID: String
     let item: HugoContentItem
     let contentToWrite: String
+}
+
+private struct LayoutMetrics {
+    let sidebarWidth: CGFloat
+    let editorWidth: CGFloat
+}
+
+private struct EditorDragStart {
+    let sidebarWidth: CGFloat
+    let editorWidth: CGFloat
 }
 
 // NOTE: You will need to implement the WebView struct that wraps WKWebView for SwiftUI.

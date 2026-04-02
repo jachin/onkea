@@ -5,8 +5,10 @@ import TOMLKit
 public struct HugoConfig: Decodable, Equatable {
     public var title: String?
     public var baseURL: String?
+    public var locale: String?
     public var languageCode: String?
-    public var author: String?
+    public var authorName: String?
+    public var author: [String: AnyCodable]?
     public var theme: String?
     public var canonifyURLs: Bool?
     public var copyright: String?
@@ -23,8 +25,10 @@ public struct HugoConfig: Decodable, Equatable {
     public init(
         title: String? = nil,
         baseURL: String? = nil,
+        locale: String? = nil,
         languageCode: String? = nil,
-        author: String? = nil,
+        authorName: String? = nil,
+        author: [String: AnyCodable]? = nil,
         theme: String? = nil,
         canonifyURLs: Bool? = nil,
         copyright: String? = nil,
@@ -40,7 +44,9 @@ public struct HugoConfig: Decodable, Equatable {
     ) {
         self.title = title
         self.baseURL = baseURL
+        self.locale = locale
         self.languageCode = languageCode
+        self.authorName = authorName
         self.author = author
         self.theme = theme
         self.canonifyURLs = canonifyURLs
@@ -60,8 +66,10 @@ public struct HugoConfig: Decodable, Equatable {
         let container = try decoder.container(keyedBy: AnyCodingKey.self)
         title = container.decodeString(forKeys: ["title"])
         baseURL = container.decodeString(forKeys: ["baseURL", "baseurl"])
+        locale = container.decodeString(forKeys: ["locale"])
         languageCode = container.decodeString(forKeys: ["languageCode", "languagecode"])
-        author = container.decodeString(forKeys: ["author"])
+        authorName = container.decodeString(forKeys: ["author"])
+        author = container.decodeDictionary(forKeys: ["author"])
         theme = container.decodeTheme(forKeys: ["theme"])
         canonifyURLs = container.decodeBool(forKeys: ["canonifyURLs", "canonifyurls"])
         copyright = container.decodeString(forKeys: ["copyright"])
@@ -78,6 +86,7 @@ public struct HugoConfig: Decodable, Equatable {
         let knownKeys: Set<String> = [
             "title",
             "baseURL", "baseurl",
+            "locale",
             "languageCode", "languagecode",
             "author",
             "theme",
@@ -97,6 +106,28 @@ public struct HugoConfig: Decodable, Equatable {
                 additional[key.stringValue] = try container.decode(AnyCodable.self, forKey: key)
             }
         }
+    }
+}
+
+extension HugoConfig {
+    var preferredLocale: String? {
+        locale ?? languageCode
+    }
+
+    var preferredAuthorName: String? {
+        if let authorName, !authorName.isEmpty {
+            return authorName
+        }
+
+        if let authorValue = author?["name"]?.value as? String, !authorValue.isEmpty {
+            return authorValue
+        }
+
+        if let paramsAuthor = params?["author"]?.value as? String, !paramsAuthor.isEmpty {
+            return paramsAuthor
+        }
+
+        return nil
     }
 }
 
@@ -262,7 +293,7 @@ public func loadHugoConfigAsync(from directory: URL) async throws -> HugoConfig 
 
     let process = Process()
     process.executableURL = executableURL
-    process.arguments = ["config", "--printZero", "--format", "toml"]
+    process.arguments = ["config", "--format", "toml"]
     process.currentDirectoryURL = directory
     let outputPipe = Pipe()
     let errorPipe = Pipe()
