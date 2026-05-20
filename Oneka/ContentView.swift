@@ -107,13 +107,15 @@ struct ContentView: View {
         .animation(.default, value: showPreview)
         .navigationTitle(windowTitle)
         .toolbar {
-            ToolbarItem(placement: .navigation) {
-                Button {
-                    showSidebar.toggle()
-                } label: {
-                    Image(systemName: showSidebar ? "sidebar.left" : "sidebar.right")
+            if siteIsOpen {
+                ToolbarItem(placement: .navigation) {
+                    Button {
+                        showSidebar.toggle()
+                    } label: {
+                        Label(showSidebar ? "Hide Sidebar" : "Show Sidebar", systemImage: "sidebar.left")
+                    }
+                    .help(showSidebar ? "Hide Sidebar" : "Show Sidebar")
                 }
-                .help(showSidebar ? "Hide Sidebar" : "Show Sidebar")
             }
 
             ToolbarItemGroup(placement: .principal) {
@@ -136,13 +138,15 @@ struct ContentView: View {
                 .disabled(!canSaveAnyPosts)
             }
 
-            ToolbarItem(placement: .primaryAction) {
-                Button {
-                    showPreview.toggle()
-                } label: {
-                    Image(systemName: showPreview ? "sidebar.right" : "sidebar.left")
+            if siteIsOpen {
+                ToolbarItem(placement: .primaryAction) {
+                    Button {
+                        showPreview.toggle()
+                    } label: {
+                        Label(showPreview ? "Hide Preview" : "Show Preview", systemImage: "sidebar.right")
+                    }
+                    .help(showPreview ? "Hide Preview" : "Show Preview")
                 }
-                .help(showPreview ? "Hide Preview" : "Show Preview")
             }
         }
         .onAppear {
