@@ -47,6 +47,7 @@ struct ContentView: View {
     @State private var isShowingImageImportPopover = false
     @State private var pendingImageInsertionKind: ImageInsertionKind = .image
     @State private var isShowingInternalLinkSheet = false
+    @State private var internalLinkReferenceKind: InternalLinkReferenceKind = .ref
     @State private var isShowingImageFileImporter = false
     @State private var selectedPhotoItem: PhotosPickerItem?
     @State private var imageImportStatus: ImageImportStatus?
@@ -149,15 +150,20 @@ struct ContentView: View {
         }
         .onChange(of: selectedPostID, handleSelectedPostIDChange)
         .onChange(of: markdownText, handleMarkdownTextChange)
-        .onReceive(NotificationCenter.default.publisher(for: .onekaOpenSiteRequested), perform: handleOpenSiteRequest)
-        .onReceive(NotificationCenter.default.publisher(for: .onekaInsertImageRequested), perform: handleInsertImageRequest)
-        .onReceive(NotificationCenter.default.publisher(for: .onekaInsertInternalLinkRequested), perform: handleInsertInternalLinkRequest)
-        .onReceive(NotificationCenter.default.publisher(for: .onekaInsertDetailsShortcodeRequested), perform: handleInsertDetailsShortcodeRequest)
-        .onReceive(NotificationCenter.default.publisher(for: .onekaInsertHighlightShortcodeRequested), perform: handleInsertHighlightShortcodeRequest)
-        .onReceive(NotificationCenter.default.publisher(for: .onekaInsertInstagramShortcodeRequested), perform: handleInsertInstagramShortcodeRequest)
-        .onReceive(NotificationCenter.default.publisher(for: .onekaInsertParamShortcodeRequested), perform: handleInsertParamShortcodeRequest)
-        .onReceive(NotificationCenter.default.publisher(for: .onekaInsertQRShortcodeRequested), perform: handleInsertQRShortcodeRequest)
-        .onReceive(NotificationCenter.default.publisher(for: .onekaInsertFigureRequested), perform: handleInsertFigureRequest)
+        .contentCommandReceivers(
+            openSite: handleOpenSiteRequest,
+            insertImage: handleInsertImageRequest,
+            insertInternalLink: handleInsertInternalLinkRequest,
+            insertDetails: handleInsertDetailsShortcodeRequest,
+            insertHighlight: handleInsertHighlightShortcodeRequest,
+            insertInstagram: handleInsertInstagramShortcodeRequest,
+            insertVimeo: handleInsertVimeoShortcodeRequest,
+            insertYouTube: handleInsertYouTubeShortcodeRequest,
+            insertParam: handleInsertParamShortcodeRequest,
+            insertQR: handleInsertQRShortcodeRequest,
+            insertMarkdownAttribute: handleInsertMarkdownAttributeRequest,
+            insertFigure: handleInsertFigureRequest
+        )
         .onChange(of: canInsertImage, handleCanInsertImageChange)
         .onChange(of: canInsertInternalLink, handleCanInsertInternalLinkChange)
         .onChange(of: canInsertShortcode, handleCanInsertShortcodeChange)
@@ -300,12 +306,24 @@ struct ContentView: View {
         insertInstagramShortcode()
     }
 
+    private func handleInsertVimeoShortcodeRequest(_ notification: Notification) {
+        insertVimeoShortcode()
+    }
+
+    private func handleInsertYouTubeShortcodeRequest(_ notification: Notification) {
+        insertYouTubeShortcode()
+    }
+
     private func handleInsertParamShortcodeRequest(_ notification: Notification) {
         insertParamShortcode()
     }
 
     private func handleInsertQRShortcodeRequest(_ notification: Notification) {
         insertQRShortcode()
+    }
+
+    private func handleInsertMarkdownAttributeRequest(_ notification: Notification) {
+        insertMarkdownAttribute()
     }
 
     private func handleInsertFigureRequest(_ notification: Notification) {
@@ -502,6 +520,22 @@ struct ContentView: View {
             .disabled(!canInsertShortcode)
 
             Button {
+                insertVimeoShortcode()
+            } label: {
+                Label("Insert Vimeo", systemImage: "play.rectangle")
+            }
+            .help("Insert a Vimeo shortcode")
+            .disabled(!canInsertShortcode)
+
+            Button {
+                insertYouTubeShortcode()
+            } label: {
+                Label("Insert YouTube", systemImage: "play.tv")
+            }
+            .help("Insert a YouTube shortcode")
+            .disabled(!canInsertShortcode)
+
+            Button {
                 insertParamShortcode()
             } label: {
                 Label("Insert Param", systemImage: "curlybraces")
@@ -515,6 +549,14 @@ struct ContentView: View {
                 Label("Insert QR", systemImage: "qrcode")
             }
             .help("Insert a QR shortcode")
+            .disabled(!canInsertShortcode)
+
+            Button {
+                insertMarkdownAttribute()
+            } label: {
+                Label("Insert Attribute", systemImage: "number")
+            }
+            .help("Insert Markdown attribute examples")
             .disabled(!canInsertShortcode)
 
             Button {
@@ -759,6 +801,27 @@ struct ContentView: View {
 
             Divider()
 
+            HStack(alignment: .firstTextBaseline, spacing: 14) {
+                Text("Reference type")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+
+                Picker("Reference type", selection: $internalLinkReferenceKind) {
+                    ForEach(InternalLinkReferenceKind.allCases) { referenceKind in
+                        Text(referenceKind.title)
+                            .tag(referenceKind)
+                    }
+                }
+                .pickerStyle(.radioGroup)
+                .labelsHidden()
+
+                Spacer()
+            }
+            .padding(.horizontal)
+            .padding(.vertical, 10)
+
+            Divider()
+
             List(linkableContentItems) { item in
                 Button {
                     insertInternalLink(to: item)
@@ -767,9 +830,9 @@ struct ContentView: View {
                 }
                 .buttonStyle(.plain)
             }
-            .frame(minHeight: 360)
+            .frame(minHeight: 420)
         }
-        .frame(width: 520, height: 460)
+        .frame(width: 600, height: 560)
     }
 
     @ViewBuilder
@@ -1276,6 +1339,34 @@ struct ContentView: View {
         }
     }
 
+    private func insertVimeoShortcode() {
+        guard canInsertShortcode else {
+            return
+        }
+
+        if markdownEditorController.insertVimeoShortcode(colorScheme: editorColorScheme) {
+            syncCurrentEditorTextToSelectedDraft()
+        } else {
+            let shortcode = "{{< vimeo VIMEO_VIDEO_ID >}}"
+            markdownText += markdownText.isEmpty ? shortcode : "\n\n\(shortcode)"
+            syncCurrentMarkdownTextToSelectedDraft()
+        }
+    }
+
+    private func insertYouTubeShortcode() {
+        guard canInsertShortcode else {
+            return
+        }
+
+        if markdownEditorController.insertYouTubeShortcode(colorScheme: editorColorScheme) {
+            syncCurrentEditorTextToSelectedDraft()
+        } else {
+            let shortcode = "{{< youtube YOUTUBE_VIDEO_ID >}}"
+            markdownText += markdownText.isEmpty ? shortcode : "\n\n\(shortcode)"
+            syncCurrentMarkdownTextToSelectedDraft()
+        }
+    }
+
     private func insertParamShortcode() {
         guard canInsertShortcode else {
             return
@@ -1304,8 +1395,22 @@ struct ContentView: View {
         }
     }
 
+    private func insertMarkdownAttribute() {
+        guard canInsertShortcode else {
+            return
+        }
+
+        if markdownEditorController.insertMarkdownAttribute(colorScheme: editorColorScheme) {
+            syncCurrentEditorTextToSelectedDraft()
+        } else {
+            let attributes = "This is a paragraph.\n{#example-id .example-class key=\"value\"}\n\n## Heading {#heading-id .heading-class}\n\n![Alt text](/images/example.jpg)\n{.image-class loading=\"lazy\"}"
+            markdownText += markdownText.isEmpty ? attributes : "\n\n\(attributes)"
+            syncCurrentMarkdownTextToSelectedDraft()
+        }
+    }
+
     private func insertInternalLink(to item: HugoContentItem) {
-        let shortcode = internalLinkShortcode(for: item)
+        let shortcode = internalLinkShortcode(for: item, referenceKind: internalLinkReferenceKind)
         if markdownEditorController.insertMarkdownLink(
             title: item.displayTitle,
             path: shortcode,
@@ -1321,8 +1426,8 @@ struct ContentView: View {
         isShowingInternalLinkSheet = false
     }
 
-    private func internalLinkShortcode(for item: HugoContentItem) -> String {
-        "{{< ref \"\(escapedShortcodeArgument(refTargetPath(for: item)))\" >}}"
+    private func internalLinkShortcode(for item: HugoContentItem, referenceKind: InternalLinkReferenceKind) -> String {
+        "{{< \(referenceKind.shortcodeName) \"\(escapedShortcodeArgument(refTargetPath(for: item)))\" >}}"
     }
 
     private func refTargetPath(for item: HugoContentItem) -> String {
@@ -1769,6 +1874,26 @@ private struct PendingSave {
     let contentToWrite: String
 }
 
+private enum InternalLinkReferenceKind: String, CaseIterable, Identifiable {
+    case ref
+    case relref
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .ref:
+            "Absolute link"
+        case .relref:
+            "Relative link"
+        }
+    }
+
+    var shortcodeName: String {
+        rawValue
+    }
+}
+
 private struct InternalLinkRow: View {
     let item: HugoContentItem
 
@@ -1803,6 +1928,37 @@ private struct InternalLinkRow: View {
         }
 
         return item.permalink.isEmpty ? "/" : item.permalink
+    }
+}
+
+private extension View {
+    func contentCommandReceivers(
+        openSite: @escaping (Notification) -> Void,
+        insertImage: @escaping (Notification) -> Void,
+        insertInternalLink: @escaping (Notification) -> Void,
+        insertDetails: @escaping (Notification) -> Void,
+        insertHighlight: @escaping (Notification) -> Void,
+        insertInstagram: @escaping (Notification) -> Void,
+        insertVimeo: @escaping (Notification) -> Void,
+        insertYouTube: @escaping (Notification) -> Void,
+        insertParam: @escaping (Notification) -> Void,
+        insertQR: @escaping (Notification) -> Void,
+        insertMarkdownAttribute: @escaping (Notification) -> Void,
+        insertFigure: @escaping (Notification) -> Void
+    ) -> some View {
+        self
+            .onReceive(NotificationCenter.default.publisher(for: .onekaOpenSiteRequested), perform: openSite)
+            .onReceive(NotificationCenter.default.publisher(for: .onekaInsertImageRequested), perform: insertImage)
+            .onReceive(NotificationCenter.default.publisher(for: .onekaInsertInternalLinkRequested), perform: insertInternalLink)
+            .onReceive(NotificationCenter.default.publisher(for: .onekaInsertDetailsShortcodeRequested), perform: insertDetails)
+            .onReceive(NotificationCenter.default.publisher(for: .onekaInsertHighlightShortcodeRequested), perform: insertHighlight)
+            .onReceive(NotificationCenter.default.publisher(for: .onekaInsertInstagramShortcodeRequested), perform: insertInstagram)
+            .onReceive(NotificationCenter.default.publisher(for: .onekaInsertVimeoShortcodeRequested), perform: insertVimeo)
+            .onReceive(NotificationCenter.default.publisher(for: .onekaInsertYouTubeShortcodeRequested), perform: insertYouTube)
+            .onReceive(NotificationCenter.default.publisher(for: .onekaInsertParamShortcodeRequested), perform: insertParam)
+            .onReceive(NotificationCenter.default.publisher(for: .onekaInsertQRShortcodeRequested), perform: insertQR)
+            .onReceive(NotificationCenter.default.publisher(for: .onekaInsertMarkdownAttributeRequested), perform: insertMarkdownAttribute)
+            .onReceive(NotificationCenter.default.publisher(for: .onekaInsertFigureRequested), perform: insertFigure)
     }
 }
 

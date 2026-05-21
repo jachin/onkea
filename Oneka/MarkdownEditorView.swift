@@ -82,6 +82,26 @@ final class MarkdownEditorController: ObservableObject {
     }
 
     @MainActor
+    func insertVimeoShortcode(colorScheme: EditorColorScheme) -> Bool {
+        let markdown = { (selectedText: String) in
+            let videoID = Self.vimeoVideoID(from: selectedText) ?? "VIMEO_VIDEO_ID"
+            return "{{< vimeo \(videoID) >}}"
+        }
+
+        return insertMarkdown(markdown, style: .block, colorScheme: colorScheme)
+    }
+
+    @MainActor
+    func insertYouTubeShortcode(colorScheme: EditorColorScheme) -> Bool {
+        let markdown = { (selectedText: String) in
+            let videoID = Self.youTubeVideoID(from: selectedText) ?? "YOUTUBE_VIDEO_ID"
+            return "{{< youtube \(videoID) >}}"
+        }
+
+        return insertMarkdown(markdown, style: .block, colorScheme: colorScheme)
+    }
+
+    @MainActor
     func insertParamShortcode(colorScheme: EditorColorScheme) -> Bool {
         let markdown = { (selectedText: String) in
             let parameterName = selectedText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -100,6 +120,19 @@ final class MarkdownEditorController: ObservableObject {
                 ? "https://example.com"
                 : selectedText
             return "{{< qr >}}\n\(text)\n{{< /qr >}}"
+        }
+
+        return insertMarkdown(markdown, style: .block, colorScheme: colorScheme)
+    }
+
+    @MainActor
+    func insertMarkdownAttribute(colorScheme: EditorColorScheme) -> Bool {
+        let markdown = { (selectedText: String) in
+            if selectedText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                return "This is a paragraph.\n{#example-id .example-class key=\"value\"}\n\n## Heading {#heading-id .heading-class}\n\n![Alt text](/images/example.jpg)\n{.image-class loading=\"lazy\"}"
+            }
+
+            return "\(selectedText)\n{#example-id .example-class key=\"value\"}"
         }
 
         return insertMarkdown(markdown, style: .block, colorScheme: colorScheme)
@@ -195,15 +228,55 @@ final class MarkdownEditorController: ObservableObject {
             let pathComponents = url.pathComponents.filter { $0 != "/" }
             if let markerIndex = pathComponents.firstIndex(where: { ["p", "reel", "tv"].contains($0) }),
                pathComponents.indices.contains(markerIndex + 1) {
-                return sanitizedInstagramPostID(pathComponents[markerIndex + 1])
+                return sanitizedShortcodeID(pathComponents[markerIndex + 1], allowedCharacters: .shortcodeID)
             }
         }
 
-        return sanitizedInstagramPostID(trimmedValue)
+        return sanitizedShortcodeID(trimmedValue, allowedCharacters: .shortcodeID)
     }
 
-    private static func sanitizedInstagramPostID(_ value: String) -> String? {
-        let allowedCharacters = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "_-"))
+    private static func vimeoVideoID(from value: String) -> String? {
+        let trimmedValue = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedValue.isEmpty else {
+            return nil
+        }
+
+        if let url = URL(string: trimmedValue), let host = url.host, host.contains("vimeo.com") {
+            let pathComponents = url.pathComponents.filter { $0 != "/" }
+            return pathComponents.last.flatMap { sanitizedShortcodeID($0, allowedCharacters: .decimalDigits) }
+        }
+
+        return sanitizedShortcodeID(trimmedValue, allowedCharacters: .decimalDigits)
+    }
+
+    private static func youTubeVideoID(from value: String) -> String? {
+        let trimmedValue = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedValue.isEmpty else {
+            return nil
+        }
+
+        if let url = URL(string: trimmedValue), let host = url.host {
+            if host.contains("youtu.be") {
+                return url.pathComponents.dropFirst().first.flatMap { sanitizedShortcodeID($0, allowedCharacters: .shortcodeID) }
+            }
+            if host.contains("youtube.com") {
+                if let queryItems = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems,
+                   let videoID = queryItems.first(where: { $0.name == "v" })?.value {
+                    return sanitizedShortcodeID(videoID, allowedCharacters: .shortcodeID)
+                }
+
+                let pathComponents = url.pathComponents.filter { $0 != "/" }
+                if let markerIndex = pathComponents.firstIndex(where: { ["embed", "shorts"].contains($0) }),
+                   pathComponents.indices.contains(markerIndex + 1) {
+                    return sanitizedShortcodeID(pathComponents[markerIndex + 1], allowedCharacters: .shortcodeID)
+                }
+            }
+        }
+
+        return sanitizedShortcodeID(trimmedValue, allowedCharacters: .shortcodeID)
+    }
+
+    private static func sanitizedShortcodeID(_ value: String, allowedCharacters: CharacterSet) -> String? {
         let sanitizedValue = value.unicodeScalars.filter { allowedCharacters.contains($0) }.map(String.init).joined()
         return sanitizedValue.isEmpty ? nil : sanitizedValue
     }
@@ -229,6 +302,10 @@ final class MarkdownEditorController: ObservableObject {
 private enum MarkdownInsertionStyle {
     case inline
     case block
+}
+
+private extension CharacterSet {
+    static let shortcodeID = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "_-"))
 }
 
 struct MarkdownEditorView: NSViewRepresentable {

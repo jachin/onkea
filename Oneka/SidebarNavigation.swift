@@ -8,8 +8,11 @@ extension Notification.Name {
     static let onekaInsertDetailsShortcodeRequested = Notification.Name("Oneka.InsertDetailsShortcodeRequested")
     static let onekaInsertHighlightShortcodeRequested = Notification.Name("Oneka.InsertHighlightShortcodeRequested")
     static let onekaInsertInstagramShortcodeRequested = Notification.Name("Oneka.InsertInstagramShortcodeRequested")
+    static let onekaInsertVimeoShortcodeRequested = Notification.Name("Oneka.InsertVimeoShortcodeRequested")
+    static let onekaInsertYouTubeShortcodeRequested = Notification.Name("Oneka.InsertYouTubeShortcodeRequested")
     static let onekaInsertParamShortcodeRequested = Notification.Name("Oneka.InsertParamShortcodeRequested")
     static let onekaInsertQRShortcodeRequested = Notification.Name("Oneka.InsertQRShortcodeRequested")
+    static let onekaInsertMarkdownAttributeRequested = Notification.Name("Oneka.InsertMarkdownAttributeRequested")
     static let onekaInsertFigureRequested = Notification.Name("Oneka.InsertFigureRequested")
 }
 
@@ -173,6 +176,16 @@ struct InsertImageCommands: Commands {
             }
             .disabled(!navigationModel.canInsertShortcode)
 
+            Button("Insert Vimeo") {
+                NotificationCenter.default.post(name: .onekaInsertVimeoShortcodeRequested, object: nil)
+            }
+            .disabled(!navigationModel.canInsertShortcode)
+
+            Button("Insert YouTube") {
+                NotificationCenter.default.post(name: .onekaInsertYouTubeShortcodeRequested, object: nil)
+            }
+            .disabled(!navigationModel.canInsertShortcode)
+
             Button("Insert Param") {
                 NotificationCenter.default.post(name: .onekaInsertParamShortcodeRequested, object: nil)
             }
@@ -180,6 +193,11 @@ struct InsertImageCommands: Commands {
 
             Button("Insert QR") {
                 NotificationCenter.default.post(name: .onekaInsertQRShortcodeRequested, object: nil)
+            }
+            .disabled(!navigationModel.canInsertShortcode)
+
+            Button("Insert Markdown Attribute") {
+                NotificationCenter.default.post(name: .onekaInsertMarkdownAttributeRequested, object: nil)
             }
             .disabled(!navigationModel.canInsertShortcode)
 
