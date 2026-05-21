@@ -6,6 +6,106 @@ final class MarkdownEditorController: ObservableObject {
     fileprivate weak var textView: NSTextView?
 
     @MainActor
+    var hasEditableTextView: Bool {
+        textView != nil
+    }
+
+    @MainActor
+    var currentText: String? {
+        textView?.string
+    }
+
+    @MainActor
+    func insertMarkdownImage(altText: String, path: String, colorScheme: EditorColorScheme) -> Bool {
+        let markdown = { (selectedText: String) in
+            let resolvedAltText = selectedText.isEmpty ? altText : selectedText
+            return "![\(Self.escapedMarkdownLinkText(resolvedAltText))](\(path))"
+        }
+
+        return insertMarkdown(markdown, style: .block, colorScheme: colorScheme)
+    }
+
+    @MainActor
+    func insertMarkdownLink(title: String, path: String, colorScheme: EditorColorScheme) -> Bool {
+        let markdown = { (selectedText: String) in
+            let resolvedTitle = selectedText.isEmpty ? title : selectedText
+            return "[\(Self.escapedMarkdownLinkText(resolvedTitle))](\(path))"
+        }
+
+        return insertMarkdown(markdown, style: .inline, colorScheme: colorScheme)
+    }
+
+    @MainActor
+    func insertDetailsShortcode(colorScheme: EditorColorScheme) -> Bool {
+        let markdown = { (selectedText: String) in
+            let body = selectedText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                ? "Add the details here."
+                : selectedText
+            return "{{< details summary=\"Summary\" >}}\n\(body)\n{{< /details >}}"
+        }
+
+        return insertMarkdown(markdown, style: .block, colorScheme: colorScheme)
+    }
+
+    @MainActor
+    func insertFigureShortcode(src: String, altText: String, colorScheme: EditorColorScheme) -> Bool {
+        let markdown = { (selectedText: String) in
+            let caption = selectedText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                ? "Add a caption."
+                : selectedText
+            return "{{< figure\n  src=\"\(Self.escapedShortcodeArgument(src))\"\n  alt=\"\(Self.escapedShortcodeArgument(altText))\"\n  caption=\"\(Self.escapedShortcodeArgument(caption))\"\n>}}"
+        }
+
+        return insertMarkdown(markdown, style: .block, colorScheme: colorScheme)
+    }
+
+    @MainActor
+    func insertHighlightShortcode(colorScheme: EditorColorScheme) -> Bool {
+        let markdown = { (selectedText: String) in
+            let code = selectedText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                ? "Add code here."
+                : selectedText
+            return "{{< highlight text >}}\n\(code)\n{{< /highlight >}}"
+        }
+
+        return insertMarkdown(markdown, style: .block, colorScheme: colorScheme)
+    }
+
+    @MainActor
+    func insertInstagramShortcode(colorScheme: EditorColorScheme) -> Bool {
+        let markdown = { (selectedText: String) in
+            let postID = Self.instagramPostID(from: selectedText) ?? "INSTAGRAM_POST_ID"
+            return "{{< instagram \(postID) >}}"
+        }
+
+        return insertMarkdown(markdown, style: .block, colorScheme: colorScheme)
+    }
+
+    @MainActor
+    func insertParamShortcode(colorScheme: EditorColorScheme) -> Bool {
+        let markdown = { (selectedText: String) in
+            let parameterName = selectedText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                ? "parameter_name"
+                : selectedText.trimmingCharacters(in: .whitespacesAndNewlines)
+            return "{{% param \"\(Self.escapedShortcodeArgument(parameterName))\" %}}"
+        }
+
+        return insertMarkdown(markdown, style: .inline, colorScheme: colorScheme)
+    }
+
+    @MainActor
+    func insertQRShortcode(colorScheme: EditorColorScheme) -> Bool {
+        let markdown = { (selectedText: String) in
+            let text = selectedText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                ? "https://example.com"
+                : selectedText
+            return "{{< qr >}}\n\(text)\n{{< /qr >}}"
+        }
+
+        return insertMarkdown(markdown, style: .block, colorScheme: colorScheme)
+    }
+
+    @MainActor
     func replaceTextUsingUndo(_ value: String, colorScheme: EditorColorScheme) -> Bool {
         guard let textView else {
             return false
@@ -34,6 +134,101 @@ final class MarkdownEditorController: ObservableObject {
         }
         return true
     }
+
+    private func insertMarkdown(
+        _ makeMarkdown: (String) -> String,
+        style: MarkdownInsertionStyle,
+        colorScheme: EditorColorScheme
+    ) -> Bool {
+        guard let textView else {
+            return false
+        }
+
+        let selectedRange = textView.selectedRange()
+        let selectedText = (textView.string as NSString).substring(with: selectedRange)
+        let markdown = makeMarkdown(selectedText)
+        let insertion = switch style {
+        case .inline:
+            markdown
+        case .block:
+            Self.blockInsertionText(markdown, in: textView.string, at: selectedRange)
+        }
+
+        guard textView.shouldChangeText(in: selectedRange, replacementString: insertion) else {
+            return false
+        }
+
+        textView.textStorage?.replaceCharacters(in: selectedRange, with: insertion)
+        guard let textStorage = textView.textStorage else {
+            return false
+        }
+
+        MarkdownHighlighter.configureAppearance(of: textView, using: colorScheme)
+        MarkdownHighlighter.highlight(textStorage: textStorage, using: colorScheme)
+        textView.didChangeText()
+        textView.setSelectedRange(NSRange(location: selectedRange.location + (insertion as NSString).length, length: 0))
+        textView.window?.makeFirstResponder(textView)
+        return true
+    }
+
+    private static func escapedMarkdownLinkText(_ value: String) -> String {
+        value
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "]", with: "\\]")
+            .replacingOccurrences(of: "\n", with: " ")
+    }
+
+    private static func escapedShortcodeArgument(_ value: String) -> String {
+        value
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "\"", with: "\\\"")
+            .replacingOccurrences(of: "\n", with: " ")
+    }
+
+    private static func instagramPostID(from value: String) -> String? {
+        let trimmedValue = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedValue.isEmpty else {
+            return nil
+        }
+
+        if let url = URL(string: trimmedValue), let host = url.host, host.contains("instagram.com") {
+            let pathComponents = url.pathComponents.filter { $0 != "/" }
+            if let markerIndex = pathComponents.firstIndex(where: { ["p", "reel", "tv"].contains($0) }),
+               pathComponents.indices.contains(markerIndex + 1) {
+                return sanitizedInstagramPostID(pathComponents[markerIndex + 1])
+            }
+        }
+
+        return sanitizedInstagramPostID(trimmedValue)
+    }
+
+    private static func sanitizedInstagramPostID(_ value: String) -> String? {
+        let allowedCharacters = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "_-"))
+        let sanitizedValue = value.unicodeScalars.filter { allowedCharacters.contains($0) }.map(String.init).joined()
+        return sanitizedValue.isEmpty ? nil : sanitizedValue
+    }
+
+    private static func blockInsertionText(_ markdown: String, in text: String, at range: NSRange) -> String {
+        let nsText = text as NSString
+        let needsLeadingBreak = range.location > 0 && nsText.substring(with: NSRange(location: range.location - 1, length: 1)) != "\n"
+        let rangeEnd = range.location + range.length
+        let needsTrailingBreak = rangeEnd < nsText.length && nsText.substring(with: NSRange(location: rangeEnd, length: 1)) != "\n"
+
+        var insertion = markdown
+        if needsLeadingBreak {
+            insertion = "\n\n" + insertion
+        }
+        if needsTrailingBreak {
+            insertion += "\n\n"
+        }
+
+        return insertion
+    }
+}
+
+private enum MarkdownInsertionStyle {
+    case inline
+    case block
 }
 
 struct MarkdownEditorView: NSViewRepresentable {

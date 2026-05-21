@@ -2,10 +2,15 @@ import SwiftUI
 import AppKit
 import Foundation
 import OSLog
+import PhotosUI
+import UniformTypeIdentifiers
 
 struct ContentView: View {
     private static let sidebarWidthStorageKey = "ContentView.sidebarWidth"
     private static let editorWidthStorageKey = "ContentView.editorWidth"
+    private static let lastOpenedSitePathStorageKey = "ContentView.lastOpenedSitePath"
+    private static let lastSiteBrowserDirectoryPathStorageKey = "ContentView.lastSiteBrowserDirectoryPath"
+    private static let lastImageBrowserDirectoryPathStorageKey = "ContentView.lastImageBrowserDirectoryPath"
 
     @EnvironmentObject private var sidebarNavigation: SidebarNavigationModel
 
@@ -14,6 +19,9 @@ struct ContentView: View {
     @AppStorage(HugoDateTimeFormat.appStorageKey) private var selectedDateTimeFormatID = HugoDateTimeFormat.defaultFormat.rawValue
     @AppStorage(Self.sidebarWidthStorageKey) private var storedSidebarWidth = 340.0
     @AppStorage(Self.editorWidthStorageKey) private var storedEditorWidth = 400.0
+    @AppStorage(Self.lastOpenedSitePathStorageKey) private var lastOpenedSitePath = ""
+    @AppStorage(Self.lastSiteBrowserDirectoryPathStorageKey) private var lastSiteBrowserDirectoryPath = ""
+    @AppStorage(Self.lastImageBrowserDirectoryPathStorageKey) private var lastImageBrowserDirectoryPath = ""
     @State private var showSidebar = true
     @State private var showPreview = true
     @State private var selectedPostID: String? = nil
@@ -36,8 +44,17 @@ struct ContentView: View {
     @State private var isSaving = false
     @State private var contentSortOrder: ContentSortOrder = .publishDateDescending
     @State private var postBrowseMode: PostBrowseMode = .date
+    @State private var isShowingImageImportPopover = false
+    @State private var pendingImageInsertionKind: ImageInsertionKind = .image
+    @State private var isShowingInternalLinkSheet = false
+    @State private var isShowingImageFileImporter = false
+    @State private var selectedPhotoItem: PhotosPickerItem?
+    @State private var imageImportStatus: ImageImportStatus?
+    @State private var pendingImageImport: PendingImageImport?
+    @State private var pendingImageName = ""
 
     @State private var hugoStatus: HugoStatus = .checking
+    @State private var hasAttemptedSiteRestore = false
     @StateObject private var markdownEditorController = MarkdownEditorController()
     @State private var sidebarWidth: CGFloat = 340
     @State private var editorWidth: CGFloat = 400
@@ -73,12 +90,24 @@ struct ContentView: View {
         HugoDateTimeFormat.from(appStorageValue: selectedDateTimeFormatID)
     }
 
+    private var lastSiteBrowserDirectoryURL: URL? {
+        directoryURL(fromStoredPath: lastSiteBrowserDirectoryPath)
+    }
+
+    private var lastImageBrowserDirectoryURL: URL? {
+        directoryURL(fromStoredPath: lastImageBrowserDirectoryPath)
+    }
+
     private var selectedContentItem: HugoContentItem? {
         guard let selectedPostID else {
             return nil
         }
 
         return contentItems.first(where: { $0.id == selectedPostID })
+    }
+
+    private var linkableContentItems: [HugoContentItem] {
+        contentItems.sorted(by: compareContentItems)
     }
 
     private let sidebarMinimumWidth: CGFloat = 280
@@ -107,204 +136,288 @@ struct ContentView: View {
         .animation(.default, value: showPreview)
         .navigationTitle(windowTitle)
         .toolbar {
-            if siteIsOpen {
-                ToolbarItem(placement: .navigation) {
-                    Button {
-                        showSidebar.toggle()
-                    } label: {
-                        Label(showSidebar ? "Hide Sidebar" : "Show Sidebar", systemImage: "sidebar.left")
-                    }
-                    .help(showSidebar ? "Hide Sidebar" : "Show Sidebar")
-                }
-            }
-
-            ToolbarItemGroup(placement: .principal) {
-                Button("Open", systemImage: "folder") {
-                    openSite()
-                }
-                .keyboardShortcut("o", modifiers: .command)
-                .disabled(hugoStatus != .compatible || isLoading)
-
-                Button("Save", systemImage: "square.and.arrow.down") {
-                    saveSelectedPost()
-                }
-                .keyboardShortcut("s", modifiers: .command)
-                .disabled(!canSaveSelectedPost)
-
-                Button("Save All", systemImage: "square.and.arrow.down.on.square") {
-                    saveAllPosts()
-                }
-                .keyboardShortcut("s", modifiers: [.command, .option])
-                .disabled(!canSaveAnyPosts)
-            }
-
-            if siteIsOpen {
-                ToolbarItem(placement: .primaryAction) {
-                    Button {
-                        showPreview.toggle()
-                    } label: {
-                        Label(showPreview ? "Hide Preview" : "Show Preview", systemImage: "sidebar.right")
-                    }
-                    .help(showPreview ? "Hide Preview" : "Show Preview")
-                }
-            }
+            contentToolbar
         }
-        .onAppear {
-            sidebarNavigation.isSiteOpen = siteIsOpen
-            sidebarWidth = CGFloat(storedSidebarWidth)
-            editorWidth = CGFloat(storedEditorWidth)
-            pendingSidebarWidth = sidebarWidth
-            pendingEditorWidth = editorWidth
-        }
-        .onDisappear {
-            stopHugoServer(hugoServerProcess)
-            hugoServerProcess = nil
-            previewURL = nil
-            hugoServerStatus = HugoServerStatus(phase: .stopped, message: "No server running", serverURL: nil)
-            commitPaneWidths()
-        }
-        .onChange(of: siteIsOpen) { _, newValue in
-            sidebarNavigation.isSiteOpen = newValue
-            if !newValue {
-                sidebarNavigation.selectedTab = .posts
-                postBrowseMode = .date
-            }
-        }
+        .onAppear(perform: handleAppear)
+        .onDisappear(perform: handleDisappear)
+        .onChange(of: siteIsOpen, handleSiteIsOpenChange)
         .onChange(of: sidebarNavigation.selectedTab) { _, _ in
             syncSelectionWithVisibleTab()
         }
         .onChange(of: contentItems) { _, _ in
             syncSelectionWithVisibleTab()
         }
-        .onChange(of: selectedPostID) { _, newValue in
-            guard let newValue else {
-                previewURL = previewURLForSelectedPost(using: hugoServerStatus.serverURL)
-                markdownText = ""
-                return
-            }
-
-            guard let siteURL,
-                  let selectedItem = contentItems.first(where: { $0.id == newValue }) else {
-                return
-            }
-
-            updatePreviewURL(for: selectedItem)
-
-            Task {
-                do {
-                    let content = try await loadContentBodyAsync(from: siteURL, relativePath: selectedItem.path)
-                    await MainActor.run {
-                        savedContentByID[selectedItem.id] = content
-                        let draftContent = draftContentByID[selectedItem.id] ?? content
-                        draftContentByID[selectedItem.id] = draftContent
-                        markdownText = draftContent
-                        contentErrorMessage = nil
-                    }
-                } catch {
-                    AppLogger.content.error("Failed to load content body for \(selectedItem.path, privacy: .public): \(error.localizedDescription, privacy: .public)")
-                    await MainActor.run {
-                        contentErrorMessage = "Failed to load content: \(error.localizedDescription)"
-                    }
-                }
-            }
+        .onChange(of: selectedPostID, handleSelectedPostIDChange)
+        .onChange(of: markdownText, handleMarkdownTextChange)
+        .onReceive(NotificationCenter.default.publisher(for: .onekaOpenSiteRequested), perform: handleOpenSiteRequest)
+        .onReceive(NotificationCenter.default.publisher(for: .onekaInsertImageRequested), perform: handleInsertImageRequest)
+        .onReceive(NotificationCenter.default.publisher(for: .onekaInsertInternalLinkRequested), perform: handleInsertInternalLinkRequest)
+        .onReceive(NotificationCenter.default.publisher(for: .onekaInsertDetailsShortcodeRequested), perform: handleInsertDetailsShortcodeRequest)
+        .onReceive(NotificationCenter.default.publisher(for: .onekaInsertHighlightShortcodeRequested), perform: handleInsertHighlightShortcodeRequest)
+        .onReceive(NotificationCenter.default.publisher(for: .onekaInsertInstagramShortcodeRequested), perform: handleInsertInstagramShortcodeRequest)
+        .onReceive(NotificationCenter.default.publisher(for: .onekaInsertParamShortcodeRequested), perform: handleInsertParamShortcodeRequest)
+        .onReceive(NotificationCenter.default.publisher(for: .onekaInsertQRShortcodeRequested), perform: handleInsertQRShortcodeRequest)
+        .onReceive(NotificationCenter.default.publisher(for: .onekaInsertFigureRequested), perform: handleInsertFigureRequest)
+        .onChange(of: canInsertImage, handleCanInsertImageChange)
+        .onChange(of: canInsertInternalLink, handleCanInsertInternalLinkChange)
+        .onChange(of: canInsertShortcode, handleCanInsertShortcodeChange)
+        .onChange(of: selectedPhotoItem, handleSelectedPhotoItemChange)
+        .fileImporter(
+            isPresented: $isShowingImageFileImporter,
+            allowedContentTypes: [.image],
+            allowsMultipleSelection: false
+        ) { result in
+            importImageFile(result)
         }
-        .onChange(of: markdownText) { _, newValue in
-            guard let selectedPostID else {
-                return
-            }
-
-            draftContentByID[selectedPostID] = newValue
+        .fileDialogMessage("Import an image into this Hugo site.")
+        .fileDialogConfirmationLabel("Import")
+        .fileDialogDefaultDirectory(lastImageBrowserDirectoryURL)
+        .popover(isPresented: $isShowingImageImportPopover, arrowEdge: .top) {
+            imageImportSourcePopover
         }
-        .onReceive(NotificationCenter.default.publisher(for: .onekaOpenSiteRequested)) { _ in
-            guard hugoStatus == .compatible, !isLoading else {
-                return
-            }
-
-            openSite()
+        .sheet(isPresented: $isShowingInternalLinkSheet) {
+            internalLinkSheet
+        }
+        .sheet(item: $pendingImageImport) { pendingImport in
+            imageImportNameSheet(for: pendingImport)
         }
         .overlay {
-            switch hugoStatus {
-            case .checking:
-                Color(.black)
-                    .opacity(0.25)
-                    .ignoresSafeArea()
-                    .overlay {
-                        ProgressView("Checking Hugo version...")
-                            .font(.title2)
-                            .padding()
-                            .background(.thinMaterial)
-                            .cornerRadius(10)
-                    }
-            case .notInstalled:
-                Color(.black)
-                    .opacity(0.25)
-                    .ignoresSafeArea()
-                    .overlay {
-                        VStack(spacing: 20) {
-                            Image(systemName: "exclamationmark.triangle.fill")
-                                .font(.system(size: 50))
-                                .foregroundColor(.red)
-                            Text("Hugo is not installed.\nPlease install Hugo before using this app.")
-                                .multilineTextAlignment(.center)
-                                .font(.title3)
-                            Button("Quit") {
-                                NSApp.terminate(nil)
-                            }
-                            .keyboardShortcut(.cancelAction)
-                            .controlSize(.large)
-                        }
-                        .padding()
-                        .background(.regularMaterial)
-                        .cornerRadius(12)
-                        .frame(maxWidth: 400)
-                    }
-            case .incompatibleVersion(let found):
-                Color(.black)
-                    .opacity(0.25)
-                    .ignoresSafeArea()
-                    .overlay {
-                        VStack(spacing: 20) {
-                            Image(systemName: "exclamationmark.triangle.fill")
-                                .font(.system(size: 50))
-                                .foregroundColor(.red)
-                            Text("Hugo version \(found.versionString) is not supported.\nPlease install Hugo v0.158.0 or newer.")
-                                .multilineTextAlignment(.center)
-                                .font(.title3)
-                            Button("Quit") {
-                                NSApp.terminate(nil)
-                            }
-                            .keyboardShortcut(.cancelAction)
-                            .controlSize(.large)
-                        }
-                        .padding()
-                        .background(.regularMaterial)
-                        .cornerRadius(12)
-                        .frame(maxWidth: 400)
-                    }
-            case .compatible:
-                EmptyView()
-            }
+            hugoCompatibilityOverlay
+        }
+        .overlay {
+            imageImportStatusOverlay
         }
         .task {
+            await checkHugoCompatibility()
+        }
+    }
+
+    private func handleAppear() {
+        sidebarNavigation.isSiteOpen = siteIsOpen
+        sidebarNavigation.canInsertImage = canInsertImage
+        sidebarNavigation.canInsertInternalLink = canInsertInternalLink
+        sidebarNavigation.canInsertShortcode = canInsertShortcode
+        sidebarWidth = CGFloat(storedSidebarWidth)
+        editorWidth = CGFloat(storedEditorWidth)
+        pendingSidebarWidth = sidebarWidth
+        pendingEditorWidth = editorWidth
+    }
+
+    private func handleDisappear() {
+        sidebarNavigation.canInsertImage = false
+        sidebarNavigation.canInsertInternalLink = false
+        sidebarNavigation.canInsertShortcode = false
+        stopHugoServer(hugoServerProcess)
+        hugoServerProcess = nil
+        previewURL = nil
+        hugoServerStatus = HugoServerStatus(phase: .stopped, message: "No server running", serverURL: nil)
+        commitPaneWidths()
+    }
+
+    private func handleSiteIsOpenChange(_ oldValue: Bool, _ newValue: Bool) {
+        sidebarNavigation.isSiteOpen = newValue
+        if !newValue {
+            sidebarNavigation.selectedTab = .posts
+            postBrowseMode = .date
+        }
+    }
+
+    private func handleSelectedPostIDChange(_ oldValue: String?, _ newValue: String?) {
+        guard let newValue else {
+            previewURL = previewURLForSelectedPost(using: hugoServerStatus.serverURL)
+            markdownText = ""
+            return
+        }
+
+        guard let siteURL,
+              let selectedItem = contentItems.first(where: { $0.id == newValue }) else {
+            return
+        }
+
+        updatePreviewURL(for: selectedItem)
+
+        Task {
             do {
-                let foundVersionOpt: HugoVersion? = try await checkHugoVersion()
-                if let foundVersion = foundVersionOpt {
-                    if foundVersion >= minimumHugoVersion {
-                        AppLogger.app.notice("Hugo compatibility check passed with version \(foundVersion.versionString, privacy: .public)")
-                        hugoStatus = .compatible
-                    } else {
-                        AppLogger.app.error("Hugo version \(foundVersion.versionString, privacy: .public) is below minimum \(minimumHugoVersion.versionString, privacy: .public)")
-                        hugoStatus = .incompatibleVersion(found: foundVersion)
-                    }
-                } else {
-                    AppLogger.app.error("Hugo compatibility check returned no version")
-                    hugoStatus = .notInstalled
+                let content = try await loadContentBodyAsync(from: siteURL, relativePath: selectedItem.path)
+                await MainActor.run {
+                    savedContentByID[selectedItem.id] = content
+                    let draftContent = draftContentByID[selectedItem.id] ?? content
+                    draftContentByID[selectedItem.id] = draftContent
+                    markdownText = draftContent
+                    contentErrorMessage = nil
                 }
             } catch {
-                AppLogger.app.error("Hugo compatibility check failed: \(error.localizedDescription, privacy: .public)")
-                hugoStatus = .notInstalled
+                AppLogger.content.error("Failed to load content body for \(selectedItem.path, privacy: .public): \(error.localizedDescription, privacy: .public)")
+                await MainActor.run {
+                    contentErrorMessage = "Failed to load content: \(error.localizedDescription)"
+                }
             }
         }
+    }
+
+    private func handleMarkdownTextChange(_ oldValue: String, _ newValue: String) {
+        guard let selectedPostID else {
+            return
+        }
+
+        draftContentByID[selectedPostID] = newValue
+    }
+
+    private func handleSelectedPhotoItemChange(_ oldValue: PhotosPickerItem?, _ newValue: PhotosPickerItem?) {
+        guard let newValue else {
+            return
+        }
+
+        isShowingImageImportPopover = false
+        importPhotoItem(newValue)
+    }
+
+    private func handleOpenSiteRequest(_ notification: Notification) {
+        guard hugoStatus == .compatible, !isLoading else {
+            return
+        }
+
+        openSite()
+    }
+
+    private func handleInsertImageRequest(_ notification: Notification) {
+        showImageImportPopover(kind: .image)
+    }
+
+    private func handleInsertInternalLinkRequest(_ notification: Notification) {
+        showInternalLinkSheet()
+    }
+
+    private func handleInsertDetailsShortcodeRequest(_ notification: Notification) {
+        insertDetailsShortcode()
+    }
+
+    private func handleInsertHighlightShortcodeRequest(_ notification: Notification) {
+        insertHighlightShortcode()
+    }
+
+    private func handleInsertInstagramShortcodeRequest(_ notification: Notification) {
+        insertInstagramShortcode()
+    }
+
+    private func handleInsertParamShortcodeRequest(_ notification: Notification) {
+        insertParamShortcode()
+    }
+
+    private func handleInsertQRShortcodeRequest(_ notification: Notification) {
+        insertQRShortcode()
+    }
+
+    private func handleInsertFigureRequest(_ notification: Notification) {
+        showImageImportPopover(kind: .figure)
+    }
+
+    private func handleCanInsertImageChange(_ oldValue: Bool, _ newValue: Bool) {
+        sidebarNavigation.canInsertImage = newValue
+        if !newValue {
+            isShowingImageImportPopover = false
+        }
+    }
+
+    private func handleCanInsertInternalLinkChange(_ oldValue: Bool, _ newValue: Bool) {
+        sidebarNavigation.canInsertInternalLink = newValue
+        if !newValue {
+            isShowingInternalLinkSheet = false
+        }
+    }
+
+    private func handleCanInsertShortcodeChange(_ oldValue: Bool, _ newValue: Bool) {
+        sidebarNavigation.canInsertShortcode = newValue
+    }
+
+    @ToolbarContentBuilder
+    private var contentToolbar: some ToolbarContent {
+        if siteIsOpen {
+            ToolbarItem(placement: .navigation) {
+                Button {
+                    showSidebar.toggle()
+                } label: {
+                    Label(showSidebar ? "Hide Sidebar" : "Show Sidebar", systemImage: "sidebar.left")
+                }
+                .help(showSidebar ? "Hide Sidebar" : "Show Sidebar")
+            }
+        }
+
+        ToolbarItemGroup(placement: .principal) {
+            Button("Open", systemImage: "folder") {
+                openSite()
+            }
+            .keyboardShortcut("o", modifiers: .command)
+            .disabled(hugoStatus != .compatible || isLoading)
+
+            Button("Save", systemImage: "square.and.arrow.down") {
+                saveSelectedPost()
+            }
+            .keyboardShortcut("s", modifiers: .command)
+            .disabled(!canSaveSelectedPost)
+
+            Button("Save All", systemImage: "square.and.arrow.down.on.square") {
+                saveAllPosts()
+            }
+            .keyboardShortcut("s", modifiers: [.command, .option])
+            .disabled(!canSaveAnyPosts)
+        }
+
+        if siteIsOpen {
+            ToolbarItemGroup(placement: .primaryAction) {
+                insertionToolbarButtons
+                previewToolbarButton
+            }
+        }
+    }
+
+    private func checkHugoCompatibility() async {
+        do {
+            let foundVersionOpt: HugoVersion? = try await checkHugoVersion()
+            if let foundVersion = foundVersionOpt {
+                if foundVersion >= minimumHugoVersion {
+                    AppLogger.app.notice("Hugo compatibility check passed with version \(foundVersion.versionString, privacy: .public)")
+                    hugoStatus = .compatible
+                    restoreLastOpenedSiteIfNeeded()
+                } else {
+                    AppLogger.app.error("Hugo version \(foundVersion.versionString, privacy: .public) is below minimum \(minimumHugoVersion.versionString, privacy: .public)")
+                    hugoStatus = .incompatibleVersion(found: foundVersion)
+                }
+            } else {
+                AppLogger.app.error("Hugo compatibility check returned no version")
+                hugoStatus = .notInstalled
+            }
+        } catch {
+            AppLogger.app.error("Hugo compatibility check failed: \(error.localizedDescription, privacy: .public)")
+            hugoStatus = .notInstalled
+        }
+    }
+
+    private func restoreLastOpenedSiteIfNeeded() {
+        guard !hasAttemptedSiteRestore, !lastOpenedSitePath.isEmpty else {
+            return
+        }
+
+        hasAttemptedSiteRestore = true
+        let url = URL(fileURLWithPath: lastOpenedSitePath)
+        guard FileManager.default.fileExists(atPath: url.path) else {
+            return
+        }
+
+        openSite(at: url, rememberLocation: false)
+    }
+
+    private func directoryURL(fromStoredPath path: String) -> URL? {
+        guard !path.isEmpty else {
+            return nil
+        }
+
+        var isDirectory: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: path, isDirectory: &isDirectory), isDirectory.boolValue else {
+            return nil
+        }
+
+        return URL(fileURLWithPath: path)
     }
 
     @ViewBuilder
@@ -351,6 +464,153 @@ struct ContentView: View {
             }
 
             paneDividerFeedbackOverlay(totalWidth: totalWidth, metrics: metrics)
+        }
+    }
+
+    private var insertionToolbarButtons: some View {
+        Group {
+            Button {
+                showInternalLinkSheet()
+            } label: {
+                Label("Insert Link", systemImage: "link")
+            }
+            .help("Insert a link to another page or post")
+            .disabled(!canInsertInternalLink)
+
+            Button {
+                insertDetailsShortcode()
+            } label: {
+                Label("Insert Details", systemImage: "text.badge.plus")
+            }
+            .help("Insert a details shortcode")
+            .disabled(!canInsertShortcode)
+
+            Button {
+                insertHighlightShortcode()
+            } label: {
+                Label("Insert Highlight", systemImage: "chevron.left.forwardslash.chevron.right")
+            }
+            .help("Insert a highlight shortcode")
+            .disabled(!canInsertShortcode)
+
+            Button {
+                insertInstagramShortcode()
+            } label: {
+                Label("Insert Instagram", systemImage: "camera")
+            }
+            .help("Insert an Instagram shortcode")
+            .disabled(!canInsertShortcode)
+
+            Button {
+                insertParamShortcode()
+            } label: {
+                Label("Insert Param", systemImage: "curlybraces")
+            }
+            .help("Insert a param shortcode")
+            .disabled(!canInsertShortcode)
+
+            Button {
+                insertQRShortcode()
+            } label: {
+                Label("Insert QR", systemImage: "qrcode")
+            }
+            .help("Insert a QR shortcode")
+            .disabled(!canInsertShortcode)
+
+            Button {
+                showImageImportPopover(kind: .figure)
+            } label: {
+                Label("Insert Figure", systemImage: "photo.on.rectangle")
+            }
+            .help("Import an image and insert a figure shortcode")
+            .disabled(!canInsertImage)
+
+            Button {
+                showImageImportPopover(kind: .image)
+            } label: {
+                Label("Insert Image", systemImage: "photo.badge.plus")
+            }
+            .help("Import an image into this site")
+            .disabled(!canInsertImage)
+        }
+    }
+
+    private var previewToolbarButton: some View {
+        Button {
+            showPreview.toggle()
+        } label: {
+            Label(showPreview ? "Hide Preview" : "Show Preview", systemImage: "sidebar.right")
+        }
+        .help(showPreview ? "Hide Preview" : "Show Preview")
+    }
+
+    @ViewBuilder
+    private var hugoCompatibilityOverlay: some View {
+        switch hugoStatus {
+        case .checking:
+            Color(.black)
+                .opacity(0.25)
+                .ignoresSafeArea()
+                .overlay {
+                    ProgressView("Checking Hugo version...")
+                        .font(.title2)
+                        .padding()
+                        .background(.thinMaterial)
+                        .cornerRadius(10)
+                }
+        case .notInstalled:
+            hugoStatusWarningOverlay(message: "Hugo is not installed.\nPlease install Hugo before using this app.")
+        case .incompatibleVersion(let found):
+            hugoStatusWarningOverlay(message: "Hugo version \(found.versionString) is not supported.\nPlease install Hugo v0.158.0 or newer.")
+        case .compatible:
+            EmptyView()
+        }
+    }
+
+    private func hugoStatusWarningOverlay(message: String) -> some View {
+        Color(.black)
+            .opacity(0.25)
+            .ignoresSafeArea()
+            .overlay {
+                VStack(spacing: 20) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.system(size: 50))
+                        .foregroundColor(.red)
+                    Text(message)
+                        .multilineTextAlignment(.center)
+                        .font(.title3)
+                    Button("Quit") {
+                        NSApp.terminate(nil)
+                    }
+                    .keyboardShortcut(.cancelAction)
+                    .controlSize(.large)
+                }
+                .padding()
+                .background(.regularMaterial)
+                .cornerRadius(12)
+                .frame(maxWidth: 400)
+            }
+    }
+
+    @ViewBuilder
+    private var imageImportStatusOverlay: some View {
+        if let imageImportStatus {
+            Color.black
+                .opacity(0.18)
+                .ignoresSafeArea()
+                .overlay {
+                    VStack(alignment: .leading, spacing: 12) {
+                        ProgressView(value: imageImportStatus.fractionCompleted)
+                        Text(imageImportStatus.message)
+                            .font(.headline)
+                        Text("Importing image into this Hugo site")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
+                    .padding(18)
+                    .frame(width: 320, alignment: .leading)
+                    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                }
         }
     }
 
@@ -409,6 +669,107 @@ struct ContentView: View {
             }
             .padding(8)
         }
+    }
+
+    private var imageImportSourcePopover: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text(pendingImageInsertionKind.importTitle)
+                .font(.headline)
+
+            Text("Selected images are copied into this Hugo site as web-ready JPEGs.")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            Divider()
+
+            PhotosPicker(selection: $selectedPhotoItem, matching: .images, photoLibrary: .shared()) {
+                Label("Import from Photos", systemImage: "photo.on.rectangle")
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .buttonStyle(.borderless)
+            .disabled(imageImportStatus != nil)
+
+            Button {
+                isShowingImageImportPopover = false
+                isShowingImageFileImporter = true
+            } label: {
+                Label("Import from File...", systemImage: "folder")
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .buttonStyle(.borderless)
+            .disabled(imageImportStatus != nil)
+        }
+        .padding(16)
+        .frame(width: 280, alignment: .leading)
+    }
+
+    private func imageImportNameSheet(for pendingImport: PendingImageImport) -> some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("Name Imported Image")
+                .font(.headline)
+
+            Text("Oneka will save this image as a JPEG in your Hugo site.")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+
+            TextField("Image name", text: $pendingImageName)
+                .textFieldStyle(.roundedBorder)
+
+            HStack {
+                Spacer()
+
+                Button("Cancel", role: .cancel) {
+                    pendingImageImport = nil
+                    pendingImageName = ""
+                }
+                .keyboardShortcut(.cancelAction)
+
+                Button("Import") {
+                    let name = pendingImageName.trimmingCharacters(in: .whitespacesAndNewlines)
+                    pendingImageImport = nil
+                    pendingImageName = ""
+                    importImage(
+                        from: pendingImport.source,
+                        preferredFilenameBase: name.isEmpty ? pendingImport.defaultName : name,
+                        insertionKind: pendingImport.insertionKind
+                    )
+                }
+                .keyboardShortcut(.defaultAction)
+            }
+        }
+        .padding(20)
+        .frame(width: 360, alignment: .leading)
+    }
+
+    private var internalLinkSheet: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack {
+                Text("Insert Internal Link")
+                    .font(.headline)
+
+                Spacer()
+
+                Button("Cancel", role: .cancel) {
+                    isShowingInternalLinkSheet = false
+                }
+                .keyboardShortcut(.cancelAction)
+            }
+            .padding()
+
+            Divider()
+
+            List(linkableContentItems) { item in
+                Button {
+                    insertInternalLink(to: item)
+                } label: {
+                    InternalLinkRow(item: item)
+                }
+                .buttonStyle(.plain)
+            }
+            .frame(minHeight: 360)
+        }
+        .frame(width: 520, height: 460)
     }
 
     @ViewBuilder
@@ -498,83 +859,91 @@ struct ContentView: View {
         panel.canChooseDirectories = true
         panel.allowsMultipleSelection = false
         panel.prompt = "Open"
+        panel.directoryURL = lastSiteBrowserDirectoryURL
         panel.begin { response in
             if response == .OK, let url = panel.url {
-                AppLogger.app.notice("Opening Hugo site at \(url.path, privacy: .public)")
-                DispatchQueue.main.async {
-                    isLoading = true
-                    errorMessage = nil
-                }
-                Task {
-                    do {
-                        let configResult = try await loadHugoConfigAsync(from: url)
-                        let loadedContentItems = try await loadHugoContentListAsync(from: url)
-                        let metadataDatabase = try await loadHugoContentMetadataDatabaseAsync(
-                            from: url,
-                            items: loadedContentItems
-                        )
-                        let serverProcess: Process?
+                openSite(at: url, rememberLocation: true)
+            }
+        }
+    }
 
-                        if loadedContentItems.isEmpty {
-                            AppLogger.server.notice("Skipping Hugo server start because no Hugo content items were found in \(url.path, privacy: .public)")
-                            await MainActor.run {
-                                previewURL = nil
-                                hugoServerStatus = HugoServerStatus(phase: .stopped, message: "No Hugo content found", serverURL: nil)
-                            }
-                            serverProcess = nil
-                        } else {
-                            serverProcess = try startHugoServer(from: url) { status in
-                                hugoServerStatus = status
-                                if let serverURL = status.serverURL {
-                                    previewURL = previewURLForSelectedPost(using: serverURL)
-                                } else if status.phase == .stopped || status.phase == .failed {
-                                    previewURL = nil
-                                }
-                            }
-                        }
+    private func openSite(at url: URL, rememberLocation: Bool) {
+        AppLogger.app.notice("Opening Hugo site at \(url.path, privacy: .public)")
+        isLoading = true
+        errorMessage = nil
 
-                        DispatchQueue.main.async {
-                            stopHugoServer(hugoServerProcess)
-                            config = configResult
-                            siteSettings = SiteSettings(config: configResult)
-                            contentItems = loadedContentItems
-                            contentMetadataDatabase = metadataDatabase
-                            siteURL = url
-                            hugoServerProcess = serverProcess
-                            previewURL = previewURLForSelectedPost(using: hugoServerStatus.serverURL)
-                            siteIsOpen = true
-                            isLoading = false
-                            errorMessage = nil
-                            contentErrorMessage = nil
-                            savedContentByID = [:]
-                            draftContentByID = [:]
-                            markdownText = ""
-                            isSaving = false
-                            syncSelectionWithVisibleTab()
-                        }
-                    } catch {
-                        AppLogger.app.error("Failed to load Hugo config for site at \(url.path, privacy: .public): \(error.localizedDescription, privacy: .public)")
-                        DispatchQueue.main.async {
-                            stopHugoServer(hugoServerProcess)
-                            hugoServerProcess = nil
-                            errorMessage = "Failed to load Hugo site: \(error.localizedDescription)"
-                            isLoading = false
-                            config = nil
-                            siteSettings = SiteSettings()
-                            contentItems = []
-                            contentMetadataDatabase = HugoContentMetadataDatabase()
-                            selectedPostID = nil
-                            siteURL = nil
-                            siteIsOpen = false
+        Task {
+            do {
+                let configResult = try await loadHugoConfigAsync(from: url)
+                let loadedContentItems = try await loadHugoContentListAsync(from: url)
+                let metadataDatabase = try await loadHugoContentMetadataDatabaseAsync(
+                    from: url,
+                    items: loadedContentItems
+                )
+                let serverProcess: Process?
+
+                if loadedContentItems.isEmpty {
+                    AppLogger.server.notice("Skipping Hugo server start because no Hugo content items were found in \(url.path, privacy: .public)")
+                    await MainActor.run {
+                        previewURL = nil
+                        hugoServerStatus = HugoServerStatus(phase: .stopped, message: "No Hugo content found", serverURL: nil)
+                    }
+                    serverProcess = nil
+                } else {
+                    serverProcess = try startHugoServer(from: url) { status in
+                        hugoServerStatus = status
+                        if let serverURL = status.serverURL {
+                            previewURL = previewURLForSelectedPost(using: serverURL)
+                        } else if status.phase == .stopped || status.phase == .failed {
                             previewURL = nil
-                            hugoServerStatus = HugoServerStatus(phase: .failed, message: "Server unavailable", serverURL: nil)
-                            contentErrorMessage = nil
-                            savedContentByID = [:]
-                            draftContentByID = [:]
-                            markdownText = ""
-                            isSaving = false
                         }
                     }
+                }
+
+                await MainActor.run {
+                    stopHugoServer(hugoServerProcess)
+                    config = configResult
+                    siteSettings = SiteSettings(config: configResult)
+                    contentItems = loadedContentItems
+                    contentMetadataDatabase = metadataDatabase
+                    siteURL = url
+                    hugoServerProcess = serverProcess
+                    previewURL = previewURLForSelectedPost(using: hugoServerStatus.serverURL)
+                    siteIsOpen = true
+                    isLoading = false
+                    errorMessage = nil
+                    contentErrorMessage = nil
+                    savedContentByID = [:]
+                    draftContentByID = [:]
+                    markdownText = ""
+                    isSaving = false
+                    lastOpenedSitePath = url.path
+                    if rememberLocation {
+                        lastSiteBrowserDirectoryPath = url.deletingLastPathComponent().path
+                    }
+                    syncSelectionWithVisibleTab()
+                }
+            } catch {
+                AppLogger.app.error("Failed to load Hugo config for site at \(url.path, privacy: .public): \(error.localizedDescription, privacy: .public)")
+                await MainActor.run {
+                    stopHugoServer(hugoServerProcess)
+                    hugoServerProcess = nil
+                    errorMessage = "Failed to load Hugo site: \(error.localizedDescription)"
+                    isLoading = false
+                    config = nil
+                    siteSettings = SiteSettings()
+                    contentItems = []
+                    contentMetadataDatabase = HugoContentMetadataDatabase()
+                    selectedPostID = nil
+                    siteURL = nil
+                    siteIsOpen = false
+                    previewURL = nil
+                    hugoServerStatus = HugoServerStatus(phase: .failed, message: "Server unavailable", serverURL: nil)
+                    contentErrorMessage = nil
+                    savedContentByID = [:]
+                    draftContentByID = [:]
+                    markdownText = ""
+                    isSaving = false
                 }
             }
         }
@@ -814,6 +1183,18 @@ struct ContentView: View {
         return hasUnsavedChanges(for: selectedPostID) && !isSaving
     }
 
+    private var canInsertImage: Bool {
+        siteURL != nil && selectedContentItem != nil && imageImportStatus == nil
+    }
+
+    private var canInsertInternalLink: Bool {
+        siteURL != nil && selectedContentItem != nil && !contentItems.isEmpty
+    }
+
+    private var canInsertShortcode: Bool {
+        siteURL != nil && selectedContentItem != nil
+    }
+
     private var windowTitle: String {
         guard let title = config?.title?.trimmingCharacters(in: .whitespacesAndNewlines),
               !title.isEmpty else {
@@ -834,6 +1215,286 @@ struct ContentView: View {
         }
 
         return savedContent != draftContent
+    }
+
+    private func showImageImportPopover(kind: ImageInsertionKind) {
+        guard canInsertImage else {
+            return
+        }
+
+        pendingImageInsertionKind = kind
+        isShowingImageImportPopover = true
+    }
+
+    private func showInternalLinkSheet() {
+        guard canInsertInternalLink else {
+            return
+        }
+
+        isShowingInternalLinkSheet = true
+    }
+
+    private func insertDetailsShortcode() {
+        guard canInsertShortcode else {
+            return
+        }
+
+        if markdownEditorController.insertDetailsShortcode(colorScheme: editorColorScheme) {
+            syncCurrentEditorTextToSelectedDraft()
+        } else {
+            let shortcode = "{{< details summary=\"Summary\" >}}\nAdd the details here.\n{{< /details >}}"
+            markdownText += markdownText.isEmpty ? shortcode : "\n\n\(shortcode)"
+            syncCurrentMarkdownTextToSelectedDraft()
+        }
+    }
+
+    private func insertHighlightShortcode() {
+        guard canInsertShortcode else {
+            return
+        }
+
+        if markdownEditorController.insertHighlightShortcode(colorScheme: editorColorScheme) {
+            syncCurrentEditorTextToSelectedDraft()
+        } else {
+            let shortcode = "{{< highlight text >}}\nAdd code here.\n{{< /highlight >}}"
+            markdownText += markdownText.isEmpty ? shortcode : "\n\n\(shortcode)"
+            syncCurrentMarkdownTextToSelectedDraft()
+        }
+    }
+
+    private func insertInstagramShortcode() {
+        guard canInsertShortcode else {
+            return
+        }
+
+        if markdownEditorController.insertInstagramShortcode(colorScheme: editorColorScheme) {
+            syncCurrentEditorTextToSelectedDraft()
+        } else {
+            let shortcode = "{{< instagram INSTAGRAM_POST_ID >}}"
+            markdownText += markdownText.isEmpty ? shortcode : "\n\n\(shortcode)"
+            syncCurrentMarkdownTextToSelectedDraft()
+        }
+    }
+
+    private func insertParamShortcode() {
+        guard canInsertShortcode else {
+            return
+        }
+
+        if markdownEditorController.insertParamShortcode(colorScheme: editorColorScheme) {
+            syncCurrentEditorTextToSelectedDraft()
+        } else {
+            let shortcode = "{{% param \"parameter_name\" %}}"
+            markdownText += shortcode
+            syncCurrentMarkdownTextToSelectedDraft()
+        }
+    }
+
+    private func insertQRShortcode() {
+        guard canInsertShortcode else {
+            return
+        }
+
+        if markdownEditorController.insertQRShortcode(colorScheme: editorColorScheme) {
+            syncCurrentEditorTextToSelectedDraft()
+        } else {
+            let shortcode = "{{< qr >}}\nhttps://example.com\n{{< /qr >}}"
+            markdownText += markdownText.isEmpty ? shortcode : "\n\n\(shortcode)"
+            syncCurrentMarkdownTextToSelectedDraft()
+        }
+    }
+
+    private func insertInternalLink(to item: HugoContentItem) {
+        let shortcode = internalLinkShortcode(for: item)
+        if markdownEditorController.insertMarkdownLink(
+            title: item.displayTitle,
+            path: shortcode,
+            colorScheme: editorColorScheme
+        ) {
+            syncCurrentEditorTextToSelectedDraft()
+        } else {
+            let markdown = "[\(escapedMarkdownLinkText(item.displayTitle))](\(shortcode))"
+            markdownText += markdownText.isEmpty ? markdown : markdown
+            syncCurrentMarkdownTextToSelectedDraft()
+        }
+
+        isShowingInternalLinkSheet = false
+    }
+
+    private func internalLinkShortcode(for item: HugoContentItem) -> String {
+        "{{< ref \"\(escapedShortcodeArgument(refTargetPath(for: item)))\" >}}"
+    }
+
+    private func refTargetPath(for item: HugoContentItem) -> String {
+        let normalizedPath = item.path.replacingOccurrences(of: "\\", with: "/")
+        if normalizedPath.hasPrefix("content/") {
+            return String(normalizedPath.dropFirst("content/".count))
+        }
+
+        return normalizedPath
+    }
+
+    private func escapedShortcodeArgument(_ value: String) -> String {
+        value.replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "\"", with: "\\\"")
+    }
+
+    private func escapedMarkdownLinkText(_ value: String) -> String {
+        value
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "]", with: "\\]")
+            .replacingOccurrences(of: "\n", with: " ")
+    }
+
+    private func importImageFile(_ result: Result<[URL], Error>) {
+        switch result {
+        case .success(let urls):
+            guard let url = urls.first else {
+                return
+            }
+            lastImageBrowserDirectoryPath = url.deletingLastPathComponent().path
+            prepareImageImport(
+                source: .file(url),
+                defaultName: ImageImportNaming.defaultName(forFileURL: url),
+                insertionKind: pendingImageInsertionKind
+            )
+        case .failure(let error):
+            contentErrorMessage = "Failed to import image: \(error.localizedDescription)"
+        }
+    }
+
+    private func importPhotoItem(_ item: PhotosPickerItem) {
+        Task {
+            do {
+                await MainActor.run {
+                    imageImportStatus = ImageImportStatus(message: "Loading photo...", fractionCompleted: 0.05)
+                }
+
+                guard let data = try await item.loadTransferable(type: Data.self) else {
+                    throw ImageAssetImportError.unsupportedImage
+                }
+                let defaultName = ImageImportNaming.defaultName(
+                    forImageData: data,
+                    fallbackDate: nil
+                )
+
+                await MainActor.run {
+                    selectedPhotoItem = nil
+                    imageImportStatus = nil
+                    prepareImageImport(
+                        source: .data(data, suggestedFilename: "photo.jpg"),
+                        defaultName: defaultName,
+                        insertionKind: pendingImageInsertionKind
+                    )
+                }
+            } catch {
+                await MainActor.run {
+                    selectedPhotoItem = nil
+                    imageImportStatus = nil
+                    contentErrorMessage = "Failed to import image: \(error.localizedDescription)"
+                }
+            }
+        }
+    }
+
+    private func prepareImageImport(source: ImageImportSource, defaultName: String, insertionKind: ImageInsertionKind) {
+        pendingImageName = defaultName
+        pendingImageImport = PendingImageImport(source: source, defaultName: defaultName, insertionKind: insertionKind)
+    }
+
+    private func importImage(from source: ImageImportSource, preferredFilenameBase: String, insertionKind: ImageInsertionKind) {
+        guard let siteURL, let selectedContentItem else {
+            return
+        }
+
+        imageImportStatus = ImageImportStatus(message: "Preparing import...", fractionCompleted: 0.0)
+        contentErrorMessage = nil
+
+        Task {
+            do {
+                let importer = ImageAssetImporter()
+                let importedAsset = try await importer.importImage(
+                    from: source,
+                    into: siteURL,
+                    for: selectedContentItem,
+                    siteBasePath: config?.baseURL,
+                    preferredFilenameBase: preferredFilenameBase
+                ) { status in
+                    Task { @MainActor in
+                        imageImportStatus = status
+                    }
+                }
+
+                await MainActor.run {
+                    insertImportedImageAsset(importedAsset, insertionKind: insertionKind)
+                    imageImportStatus = nil
+                    saveSelectedPost()
+                    AppLogger.content.notice("Imported image to \(importedAsset.fileURL.path, privacy: .public)")
+                }
+            } catch {
+                await MainActor.run {
+                    imageImportStatus = nil
+                    contentErrorMessage = "Failed to import image: \(error.localizedDescription)"
+                }
+            }
+        }
+    }
+
+    private func insertImportedImageAsset(_ asset: ImportedImageAsset, insertionKind: ImageInsertionKind) {
+        switch insertionKind {
+        case .image:
+            insertImportedImageMarkdown(asset)
+        case .figure:
+            insertImportedFigureShortcode(asset)
+        }
+    }
+
+    private func insertImportedImageMarkdown(_ asset: ImportedImageAsset) {
+        if markdownEditorController.insertMarkdownImage(
+            altText: asset.altText,
+            path: asset.markdownPath,
+            colorScheme: editorColorScheme
+        ) {
+            syncCurrentEditorTextToSelectedDraft()
+            return
+        }
+
+        let markdown = "![\(asset.altText)](\(asset.markdownPath))"
+        markdownText += markdownText.isEmpty ? markdown : "\n\n\(markdown)"
+        syncCurrentMarkdownTextToSelectedDraft()
+    }
+
+    private func insertImportedFigureShortcode(_ asset: ImportedImageAsset) {
+        if markdownEditorController.insertFigureShortcode(
+            src: asset.markdownPath,
+            altText: asset.altText,
+            colorScheme: editorColorScheme
+        ) {
+            syncCurrentEditorTextToSelectedDraft()
+            return
+        }
+
+        let shortcode = "{{< figure\n  src=\"\(escapedShortcodeArgument(asset.markdownPath))\"\n  alt=\"\(escapedShortcodeArgument(asset.altText))\"\n  caption=\"Add a caption.\"\n>}}"
+        markdownText += markdownText.isEmpty ? shortcode : "\n\n\(shortcode)"
+        syncCurrentMarkdownTextToSelectedDraft()
+    }
+
+    private func syncCurrentEditorTextToSelectedDraft() {
+        guard let text = markdownEditorController.currentText else {
+            syncCurrentMarkdownTextToSelectedDraft()
+            return
+        }
+
+        markdownText = text
+        syncCurrentMarkdownTextToSelectedDraft()
+    }
+
+    private func syncCurrentMarkdownTextToSelectedDraft() {
+        guard let selectedPostID else {
+            return
+        }
+
+        draftContentByID[selectedPostID] = markdownText
     }
 
     private func saveSelectedPost() {
@@ -994,10 +1655,155 @@ struct ContentView: View {
     }
 }
 
+private struct PendingImageImport: Identifiable {
+    let id = UUID()
+    let source: ImageImportSource
+    let defaultName: String
+    let insertionKind: ImageInsertionKind
+}
+
+private enum ImageInsertionKind {
+    case image
+    case figure
+
+    var importTitle: String {
+        switch self {
+        case .image:
+            "Import Image"
+        case .figure:
+            "Import Figure Image"
+        }
+    }
+}
+
+private enum ImageImportNaming {
+    static func defaultName(forFileURL url: URL) -> String {
+        sanitizedDisplayName(from: url.deletingPathExtension().lastPathComponent, fallback: "image")
+    }
+
+    static func defaultName(forImageData data: Data, fallbackDate: Date?) -> String {
+        let metadata = imageMetadata(from: data)
+        let descriptiveName = [metadata.title, metadata.description]
+            .compactMap { nonEmptyString($0?.trimmingCharacters(in: .whitespacesAndNewlines)) }
+            .first
+
+        if let descriptiveName {
+            return sanitizedDisplayName(from: descriptiveName, fallback: datedFallbackName(from: fallbackDate))
+        }
+
+        return datedFallbackName(from: metadata.creationDate ?? fallbackDate)
+    }
+
+    private static func imageMetadata(from data: Data) -> ImageMetadata {
+        guard let source = CGImageSourceCreateWithData(data as CFData, nil),
+              let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any] else {
+            return ImageMetadata(title: nil, description: nil, creationDate: nil)
+        }
+
+        let tiff = properties[kCGImagePropertyTIFFDictionary] as? [CFString: Any]
+        let iptc = properties[kCGImagePropertyIPTCDictionary] as? [CFString: Any]
+        let exif = properties[kCGImagePropertyExifDictionary] as? [CFString: Any]
+
+        let title = stringValue(iptc?[kCGImagePropertyIPTCObjectName])
+            ?? stringValue(tiff?[kCGImagePropertyTIFFImageDescription])
+        let description = stringValue(iptc?[kCGImagePropertyIPTCCaptionAbstract])
+        let creationDate = dateValue(exif?[kCGImagePropertyExifDateTimeOriginal])
+            ?? dateValue(tiff?[kCGImagePropertyTIFFDateTime])
+
+        return ImageMetadata(title: title, description: description, creationDate: creationDate)
+    }
+
+    private static func stringValue(_ value: Any?) -> String? {
+        nonEmptyString((value as? String)?.trimmingCharacters(in: .whitespacesAndNewlines))
+    }
+
+    private static func nonEmptyString(_ value: String?) -> String? {
+        guard let value, !value.isEmpty else {
+            return nil
+        }
+
+        return value
+    }
+
+    private static func dateValue(_ value: Any?) -> Date? {
+        guard let value = stringValue(value) else {
+            return nil
+        }
+
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "yyyy:MM:dd HH:mm:ss"
+        return formatter.date(from: value)
+    }
+
+    private static func datedFallbackName(from date: Date?) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "yyyy-MM-dd-HHmmss"
+        return "photo-\(formatter.string(from: date ?? Date()))"
+    }
+
+    private static func sanitizedDisplayName(from value: String, fallback: String) -> String {
+        let allowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-_ "))
+        let characters = value.unicodeScalars.map { scalar in
+            allowed.contains(scalar) ? Character(scalar) : "-"
+        }
+        let collapsed = String(characters)
+            .split(whereSeparator: { $0 == "-" || $0 == " " || $0 == "\t" })
+            .joined(separator: "-")
+            .lowercased()
+
+        return collapsed.isEmpty ? fallback : collapsed
+    }
+}
+
+private struct ImageMetadata {
+    let title: String?
+    let description: String?
+    let creationDate: Date?
+}
+
 private struct PendingSave {
     let itemID: String
     let item: HugoContentItem
     let contentToWrite: String
+}
+
+private struct InternalLinkRow: View {
+    let item: HugoContentItem
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: item.section.localizedCaseInsensitiveCompare("posts") == .orderedSame ? "doc.text" : "doc.plaintext")
+                .foregroundStyle(.secondary)
+                .frame(width: 18)
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(item.displayTitle)
+                    .lineLimit(1)
+
+                HStack(spacing: 8) {
+                    Text(item.sectionTitle)
+                    Text(linkPath)
+                }
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+            }
+
+            Spacer()
+        }
+        .contentShape(Rectangle())
+        .padding(.vertical, 4)
+    }
+
+    private var linkPath: String {
+        if let permalinkURL = URL(string: item.permalink), permalinkURL.scheme != nil {
+            return permalinkURL.path.isEmpty ? "/" : permalinkURL.path
+        }
+
+        return item.permalink.isEmpty ? "/" : item.permalink
+    }
 }
 
 private struct LayoutMetrics {

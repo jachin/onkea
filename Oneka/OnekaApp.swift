@@ -19,6 +19,7 @@ struct OnekaApp: App {
         .commands {
             OpenSiteCommands()
             SidebarTabCommands(navigationModel: sidebarNavigation)
+            InsertImageCommands(navigationModel: sidebarNavigation)
         }
 
         Settings {
